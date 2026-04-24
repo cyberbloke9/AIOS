@@ -37,6 +37,9 @@ from aios.verification.calibration_status import (
 from aios.verification.credentials import (
     CredentialError, CredentialLedger,
 )
+from aios.runtime.killswitch import (
+    KillSwitch, KillSwitchError, apply_kill_switch, is_killed, lift_kill_switch,
+)
 from aios.verification.incident_replay import replay_incident_from_home
 from aios.verification.conservation_scan import (
     ADREvent, ContextLoad, Decision, EventLogRange, GenerationSlice,
@@ -508,6 +511,72 @@ def cmd_compact(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_kill(args: argparse.Namespace) -> int:
+    """Kernel §5 kill switch — halt Z1-Z4 activity within scope."""
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+    switch = KillSwitch(
+        scope=args.scope, subject=args.subject or "*",
+        reason=args.reason, authority=args.authority,
+    )
+    log = EventLog(home / "events")
+    try:
+        try:
+            frame = apply_kill_switch(log, switch)
+        except KillSwitchError as e:
+            sys.stderr.write(f"authorization refused: {e}\n")
+            return 14
+    finally:
+        log.close()
+    print(f"kill applied: scope={args.scope} subject={switch.subject}")
+    print(f"  seq:       {frame.seq}")
+    print(f"  reason:    {args.reason}")
+    print(f"  authority: {args.authority}")
+    if args.scope == "global":
+        print("  read-only mode: ENABLED (§5.3)")
+    return 0
+
+
+def cmd_kill_lift(args: argparse.Namespace) -> int:
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+    switch = KillSwitch(
+        scope=args.scope, subject=args.subject or "*",
+        reason=args.reason, authority=args.authority,
+    )
+    log = EventLog(home / "events")
+    try:
+        try:
+            frame = lift_kill_switch(log, switch)
+        except KillSwitchError as e:
+            sys.stderr.write(f"authorization refused: {e}\n")
+            return 14
+    finally:
+        log.close()
+    print(f"kill lifted: scope={args.scope} subject={switch.subject} seq={frame.seq}")
+    return 0
+
+
+def cmd_kill_status(args: argparse.Namespace) -> int:
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+    log = EventLog(home / "events")
+    try:
+        state = is_killed(log, scope=args.scope, subject=args.subject or "*")
+    finally:
+        log.close()
+    print(f"kill status: scope={args.scope} subject={args.subject or '*'}")
+    print(f"  active:    {state.active}")
+    if state.active:
+        print(f"  seq:       {state.applied_at_seq}")
+        print(f"  authority: {state.applied_authority}")
+        print(f"  reason:    {state.reason}")
+    return 0 if not state.active else 15
+
+
 def cmd_replay_incident(args: argparse.Namespace) -> int:
     home = _home_from_args(args)
     if not _require_initialized(home):
@@ -816,6 +885,36 @@ def build_parser() -> argparse.ArgumentParser:
                         help="show all credentials in the ledger (phase + standing)")
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_credential_status)
+
+    sp = sub.add_parser("kill",
+                        help="Kernel §5 — halt activity within scope (global/authority/workflow/skill)")
+    sp.add_argument("--scope", required=True,
+                    choices=["global", "authority", "workflow", "skill"])
+    sp.add_argument("--subject", default=None,
+                    help="entity id (omit for global)")
+    sp.add_argument("--reason", required=True)
+    sp.add_argument("--authority", required=True,
+                    help="A4 | A5 | operator | skill_owner:<name>")
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_kill)
+
+    sp = sub.add_parser("kill-lift",
+                        help="Kernel §5 — lift an active kill")
+    sp.add_argument("--scope", required=True,
+                    choices=["global", "authority", "workflow", "skill"])
+    sp.add_argument("--subject", default=None)
+    sp.add_argument("--reason", required=True)
+    sp.add_argument("--authority", required=True)
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_kill_lift)
+
+    sp = sub.add_parser("kill-status",
+                        help="check whether a scope/subject is currently killed")
+    sp.add_argument("--scope", required=True,
+                    choices=["global", "authority", "workflow", "skill"])
+    sp.add_argument("--subject", default=None)
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_kill_status)
 
     sp = sub.add_parser("replay-incident",
                         help="replay a run_id's frames and attribute a G-class")
