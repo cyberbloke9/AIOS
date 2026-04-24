@@ -48,7 +48,10 @@ def test_p_airgap_declaration_fails_loader():
         assert not result.passed
 
 
-def test_p_highassurance_declaration_fails_loader():
+def test_p_highassurance_requires_merkle_batch():
+    """A fresh P-HA home with no merkle.batch frames fails the loader.
+    Sprint 72 made P-HA pass WHEN merkle batches are present; the
+    absence path still fails with a Merkle-specific message."""
     with tempfile.TemporaryDirectory() as tmp:
         init_aios_home(tmp, profile="P-HighAssurance")
         result = check_profile(tmp)
@@ -56,7 +59,7 @@ def test_p_highassurance_declaration_fails_loader():
         assert not result.passed
         failing = [c for c in result.checks if c.status == "fail"]
         details = " ".join(c.detail for c in failing)
-        assert "Merkle" in details  # §1.5
+        assert "merkle" in details.lower()
 
 
 def test_events_dir_missing_fails():

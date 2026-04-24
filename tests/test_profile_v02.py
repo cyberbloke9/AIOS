@@ -103,15 +103,15 @@ def test_p_local_still_refuses_signed_frames():
         assert bad and bad[0].status == "fail"
 
 
-def test_p_highassurance_still_refused():
-    """P-HighAssurance requires Merkle overlay, Rekor, DPoP, reproducible
-    builds — none of which v0.2.0 implements."""
+def test_p_highassurance_refuses_without_merkle_batch():
+    """v0.6.0 made P-HA pass when merkle.batch frames exist. Without one,
+    the loader still refuses with a Merkle-specific failure."""
     with tempfile.TemporaryDirectory() as tmp:
         init_aios_home(tmp, profile="P-HighAssurance")
         result = check_profile(tmp)
         assert not result.passed
         details = " ".join(c.detail for c in result.checks if c.status == "fail")
-        assert "Merkle" in details
+        assert "merkle" in details.lower()
 
 
 def test_p_airgap_still_refused():
