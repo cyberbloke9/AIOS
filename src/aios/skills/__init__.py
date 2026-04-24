@@ -28,6 +28,9 @@ from aios.skills.base import (
     default_skill_registry,
 )
 
+# Baseline skills self-register on import.
+from aios.skills import adr_check as _adr_check  # noqa: F401,E402
+
 __all__ = [
     "NotImplementedSkillError",
     "SkillContract",
