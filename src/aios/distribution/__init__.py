@@ -18,6 +18,14 @@ from aios.distribution.integrity import (
     build_integrity_manifest,
     verify_install,
 )
+from aios.distribution.release import (
+    ReleaseArtifact,
+    ReleaseBundle,
+    ReleaseBundleError,
+    ReleaseVerifyReport,
+    build_release_bundle,
+    verify_release_bundle,
+)
 from aios.distribution.tuf import (
     RootContent,
     SignedMetadata,
