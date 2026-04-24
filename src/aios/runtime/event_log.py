@@ -562,6 +562,7 @@ class EventLog:
             }
 
         as_of_seq = self._next_seq - 1 if self._next_seq > 0 else -1
+        # CBOR decode sees integers unchanged; store -1 as a negative int.
         return self.append(
             kind="snapshot",
             actor=actor,
@@ -570,6 +571,75 @@ class EventLog:
                 "projections": projections_meta,
             },
         )
+
+    def find_latest_snapshot(self) -> Frame | None:
+        """Walk the log (verifying the hash chain) and return the most
+        recent frame with kind == 'snapshot', or None if none exists."""
+        latest: Frame | None = None
+        for frame in self.replay():
+            if frame.kind == "snapshot":
+                latest = frame
+        return latest
+
+    def load_snapshot_state(self, snapshot_frame: Frame) -> dict[str, Any]:
+        """Load + verify the projection blobs referenced by a snapshot frame.
+
+        Returns {projection_name: decoded_state}. Raises ValueError if
+        any referenced blob is missing, is wrong length, or has a hash
+        that does not match the snapshot frame's recorded state_hash.
+        """
+        if snapshot_frame.kind != "snapshot":
+            raise ValueError(
+                f"frame seq={snapshot_frame.seq} kind="
+                f"{snapshot_frame.kind!r} is not a snapshot frame"
+            )
+        projections = snapshot_frame.payload.get("projections")
+        if not isinstance(projections, dict):
+            raise ValueError(
+                f"snapshot seq={snapshot_frame.seq} has no 'projections' map"
+            )
+
+        state: dict[str, Any] = {}
+        for name, meta in projections.items():
+            ref = meta.get("state_ref")
+            expected_hash = meta.get("state_hash")
+            if not ref or not isinstance(expected_hash, bytes):
+                raise ValueError(
+                    f"snapshot projection {name!r} missing state_ref "
+                    f"or state_hash"
+                )
+            blob_path = self.root / ref
+            if not blob_path.is_file():
+                raise ValueError(
+                    f"snapshot blob not found: {blob_path}"
+                )
+            blob_bytes = blob_path.read_bytes()
+            if sha256(blob_bytes) != expected_hash:
+                raise ValueError(
+                    f"snapshot blob {ref} hash does not match declared "
+                    f"state_hash; tampering or corruption"
+                )
+            state[name] = _CborDecoder(blob_bytes).decode()
+        return state
+
+    def replay_from_snapshot(self, snapshot_frame: Frame) -> Iterator[Frame]:
+        """Yield every frame in the log with seq > snapshot.as_of_seq.
+
+        The caller pairs this with load_snapshot_state() to get the
+        O(snapshot_size + frames_since_snapshot) replay time §1.8
+        promises. The hash chain is verified in full during iteration
+        (a snapshot cannot be trusted if the chain leading up to it is
+        broken — but the snapshot blob itself is trusted via its
+        state_hash).
+        """
+        as_of = snapshot_frame.payload.get("as_of_seq")
+        if not isinstance(as_of, int):
+            raise ValueError(
+                f"snapshot seq={snapshot_frame.seq} has no valid as_of_seq"
+            )
+        for frame in self.replay():
+            if frame.seq > as_of and frame.seq != snapshot_frame.seq:
+                yield frame
 
     def close(self):
         if self._active_handle is not None:
