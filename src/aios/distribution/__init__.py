@@ -18,6 +18,11 @@ from aios.distribution.install import (
     install_package,
     list_installed_versions,
 )
+from aios.distribution.upgrade import (
+    UpgradeError,
+    UpgradeResult,
+    upgrade_package,
+)
 from aios.distribution.integrity import (
     FileEntry,
     IntegrityManifest,
