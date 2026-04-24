@@ -205,10 +205,20 @@ def test_workflow_referencing_unregistered_predicate_refused():
 
 
 def test_stub_predicate_refuses_silent_pass():
-    """P_acceptance_tests is registered but not yet implemented. A workflow
-    that calls evaluate() on it must get a loud refusal, not a silent 'ok'.
-    (P_PI_sentinel was promoted from stub to real in sprint 45; the
-    still-stub predicate is P_acceptance_tests.)"""
+    """As of v0.4.0 all §1.2 core predicates are real. The "no silent
+    pass" property still applies to ANY predicate registered without
+    an implementation — test with a throwaway Registry."""
+    from aios.verification.registry import (
+        PredicateRecord, Registry as _Registry,
+    )
+    reg = _Registry()
+    reg.register(PredicateRecord(
+        id="P_local_stub", version="0.0.0", owner_authority="A4",
+        gate_type="T1", determinism="deterministic", side_effects="read_only",
+        input_schema="x", output_schema="y", reference_vectors="z",
+        failure_level="minor", soundness_class="other",
+        implementation=None,
+    ))
     run = RunState(
         run_id="t",
         invariants_before=frozenset(),
@@ -222,7 +232,7 @@ def test_stub_predicate_refuses_silent_pass():
         impact="local",
     )
     with pytest.raises(NotImplementedPredicateError):
-        default_registry.evaluate("P_acceptance_tests", run)
+        reg.evaluate("P_local_stub", run)
 
 
 # Q1 breach must be detected and raised through the ledger -----------------

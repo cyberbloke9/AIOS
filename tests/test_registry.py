@@ -101,10 +101,21 @@ def test_evaluate_o5_via_registry():
 
 
 def test_evaluate_stub_predicate_raises_not_implemented():
-    # P_PI_sentinel became real in sprint 45; P_acceptance_tests remains
-    # stubbed so this "no silent pass on stubs" invariant stays testable.
+    # As of v0.4.0 all §1.2 core predicates are real. Register a
+    # throwaway stub on an isolated Registry so the "no silent pass"
+    # property stays covered without touching the default registry.
+    reg = Registry()
+    from aios.verification.registry import PredicateRecord
+    stub = PredicateRecord(
+        id="P_test_stub", version="0.0.0", owner_authority="A4",
+        gate_type="T1", determinism="deterministic", side_effects="read_only",
+        input_schema="x", output_schema="y", reference_vectors="z",
+        failure_level="minor", soundness_class="other",
+        implementation=None,
+    )
+    reg.register(stub)
     with pytest.raises(NotImplementedPredicateError):
-        default_registry.evaluate("P_acceptance_tests", _sample_run())
+        reg.evaluate("P_test_stub", _sample_run())
 
 
 def test_evaluate_schema_valid_no_args_returns_preserved_with_note():

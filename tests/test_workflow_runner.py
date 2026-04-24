@@ -10,7 +10,7 @@ from aios.verification.conservation_scan import (
     ContextLoad, Decision, EventLogRange, GenerationSlice,
     Invariant, RunState, VerificationSlice, _chain_hash,
 )
-from aios.verification.registry import Registry
+from aios.verification.registry import Registry, default_registry
 from aios.workflow import (
     WorkflowRunner, parse_manifest,
 )
@@ -147,28 +147,41 @@ def test_promoted_run_emits_promoted_frame():
 
 
 def test_stub_predicate_causes_rejection_not_silent_pass():
-    """A workflow that explicitly includes a still-stub predicate
-    (P_acceptance_tests) must be rejected — stubs cannot silently pass.
-    P_schema_valid was promoted in sprint 25 and P_PI_sentinel in
-    sprint 45; P_acceptance_tests is the remaining stub."""
+    """As of v0.4.0 no §1.2 core predicate is a stub, but the "no silent
+    pass" property still applies to any workflow-declared predicate that
+    lacks an implementation. Test with a local Registry + a synthetic
+    stub to keep the semantic covered."""
+    from aios.verification.registry import PredicateRecord
+
+    reg = Registry()
+    for rec in default_registry._by_id.values():
+        reg._by_id[rec.id] = rec      # carry over core set
+    reg.register(PredicateRecord(
+        id="P_synthetic_stub", version="0.0.0", owner_authority="A4",
+        gate_type="T1", determinism="deterministic", side_effects="read_only",
+        input_schema="x", output_schema="y", reference_vectors="z",
+        failure_level="minor", soundness_class="other",
+        implementation=None,
+    ))
+
     manifest = parse_manifest(json.dumps({
         "id": "stub-demo",
         "version": "1.0",
         "impact": "local",
-        "required_gates": ["P_acceptance_tests"],
-    }))
+        "required_gates": ["P_synthetic_stub"],
+    }), registry=reg)
 
     with tempfile.TemporaryDirectory() as tmp:
         log = EventLog(tmp)
         try:
-            result = WorkflowRunner().run(manifest, _clean_run(), log)
+            result = WorkflowRunner(registry=reg).run(manifest, _clean_run(), log)
         finally:
             log.close()
         assert result.outcome == "rejected"
         stub_results = [g for g in result.gate_results
                         if g.status == "not_implemented"]
         assert stub_results
-        assert any(g.predicate_id == "P_acceptance_tests" for g in stub_results)
+        assert any(g.predicate_id == "P_synthetic_stub" for g in stub_results)
 
 
 def test_subsystem_runs_m4_and_o5():
