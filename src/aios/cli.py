@@ -349,6 +349,51 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compact(args: argparse.Namespace) -> int:
+    """§1.7 compaction — takes a projections JSON file, appends a
+    snapshot, marks old segments compacted.
+
+    The projections JSON maps projection names to arbitrary CBOR-
+    serializable state that the caller materialized by replaying frames
+    0..through_seq. aios compact does not compute projections itself;
+    doing so would couple it to application state logic.
+    """
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+
+    try:
+        projections_data = json.loads(Path(args.projections).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        sys.stderr.write(f"error: could not read projections: {e}\n")
+        return 2
+    if not isinstance(projections_data, dict):
+        sys.stderr.write("error: projections JSON must be a top-level object\n")
+        return 2
+
+    log = EventLog(home / "events")
+    try:
+        report = log.compact(
+            through_seq=args.through_seq,
+            projections=projections_data,
+        )
+    except ValueError as e:
+        sys.stderr.write(f"compaction refused: {e}\n")
+        log.close()
+        return 2
+    finally:
+        if log._active_handle is not None:
+            log.close()
+
+    print(f"compacted through seq={args.through_seq}")
+    print(f"  snapshot appended at seq={report['snapshot_seq']}")
+    print(f"  segments marked compacted: {len(report['compacted_segments'])}")
+    for name in report["compacted_segments"]:
+        print(f"    - {name}")
+    print(f"  head seq now: {report['post_compaction_head_seq']}")
+    return 0
+
+
 def cmd_replay_incident(args: argparse.Namespace) -> int:
     home = _home_from_args(args)
     if not _require_initialized(home):
@@ -663,6 +708,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("run_id", help="run_id to replay")
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_replay_incident)
+
+    sp = sub.add_parser("compact",
+                        help="§1.7 — snapshot + mark segments compacted through seq")
+    sp.add_argument("--through-seq", type=int, required=True,
+                    help="compact frames with seq <= through_seq")
+    sp.add_argument("--projections", required=True,
+                    help="path to JSON dict with materialized projection state")
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_compact)
 
     sp = sub.add_parser("credential-seed",
                         help="seed a new Phase 0 credential for ENTITY")

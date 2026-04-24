@@ -572,6 +572,107 @@ class EventLog:
             },
         )
 
+    def compact(self, *, through_seq: int,
+                projections: dict[str, Any]) -> dict:
+        """§1.7 compaction — append a snapshot covering state at
+        `through_seq` and mark every closed segment whose last_seq <=
+        `through_seq` as compacted (header flags bit 1 set).
+
+        Compaction does NOT delete source segments (§1.7 retention
+        rule). It does not mutate the frames inside those segments —
+        only the header flags bit. Future replays can:
+          - Use the snapshot to skip application work for seq 0..through_seq
+          - OR read the old segments (still bit-identical) for audit
+
+        Caller responsibilities:
+          projections must carry the materialized state AS OF `through_seq`.
+          The caller computed this by replaying frames 0..through_seq or
+          by loading an earlier snapshot + forward-applying.
+
+        Returns a report with:
+          snapshot_seq              — seq of the snapshot frame just written
+          as_of_seq                 — through_seq (the compacted boundary)
+          compacted_segments        — list of segment filenames now marked
+          post_compaction_head_seq  — current head seq after the snapshot append
+        """
+        if through_seq < 0:
+            raise ValueError(f"through_seq must be >= 0, got {through_seq}")
+        current_head = self._next_seq - 1
+        if through_seq > current_head:
+            raise ValueError(
+                f"through_seq={through_seq} is beyond current head "
+                f"{current_head}; cannot compact frames that do not exist"
+            )
+
+        # Write snapshot blobs (same as create_snapshot) but override
+        # as_of_seq so the snapshot reflects the compaction boundary,
+        # not the live head.
+        blobs_dir = self.root / "snapshot-blobs"
+        blobs_dir.mkdir(parents=True, exist_ok=True)
+        projections_meta: dict[str, dict] = {}
+        for name, state in projections.items():
+            blob_bytes = cbor_encode(state)
+            state_hash = sha256(blob_bytes)
+            filename = f"{name}-{state_hash.hex()}.cbor"
+            (blobs_dir / filename).write_bytes(blob_bytes)
+            projections_meta[name] = {
+                "state_hash": state_hash,
+                "state_ref": f"snapshot-blobs/{filename}",
+            }
+
+        snapshot_frame = self.append(
+            kind="snapshot",
+            actor="A5",
+            payload={
+                "as_of_seq": through_seq,
+                "projections": projections_meta,
+                "compaction": True,
+            },
+        )
+
+        # Mark every closed segment with last_seq <= through_seq as
+        # compacted. Flag bit 1 per §1.4.2.
+        compacted_files: list[str] = []
+        for seg_path in self._segment_files():
+            if seg_path.name.endswith("_OPEN.aios"):
+                continue
+            # Parse the closed segment's last_seq from its filename
+            # "segment_<first>_<last>.aios".
+            name_parts = seg_path.stem.split("_")
+            try:
+                last_seq = int(name_parts[2])
+            except (IndexError, ValueError):
+                continue
+            if last_seq > through_seq:
+                continue
+            self._set_segment_compacted_flag(seg_path)
+            compacted_files.append(seg_path.name)
+
+        return {
+            "snapshot_seq": snapshot_frame.seq,
+            "as_of_seq": through_seq,
+            "compacted_segments": compacted_files,
+            "post_compaction_head_seq": self._next_seq - 1,
+        }
+
+    def _set_segment_compacted_flag(self, path: Path) -> None:
+        """Set flag bit 1 (compacted) in a closed segment's header."""
+        with open(path, "r+b") as fh:
+            hdr_raw = fh.read(HEADER_TOTAL_SIZE)
+            hdr = _unpack_header(hdr_raw)
+            new_flags = (hdr["flags"] or 0) | 0x02   # bit 1
+            # Re-pack with new flags. The segment was closed -> prev_hash
+            # field already carries the right value.
+            new_header = _pack_header(
+                hdr["first_seq"], hdr["last_seq"],
+                hdr["created_ts_ns"], hdr["prev_hash"],
+                flags=new_flags,
+            )
+            fh.seek(0)
+            fh.write(new_header)
+            fh.flush()
+            os.fsync(fh.fileno())
+
     def find_latest_snapshot(self) -> Frame | None:
         """Walk the log (verifying the hash chain) and return the most
         recent frame with kind == 'snapshot', or None if none exists."""
