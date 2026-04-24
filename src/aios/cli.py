@@ -45,8 +45,10 @@ from aios.verification.conservation_scan import (
 )
 from aios.verification.corpus import CorpusQualityError
 from aios.distribution import (
+    BootstrapAnchorError, Channel,
     IntegrityManifest, build_integrity_manifest,
-    generate_cyclonedx, generate_spdx, verify_install,
+    generate_cyclonedx, generate_spdx,
+    load_root_metadata, verify_bootstrap_anchor, verify_install,
 )
 from aios.project import (
     adopt as _adopt_project,
@@ -351,6 +353,45 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     print(f"  adversarial:  {record.corpus_adversarial_share:.3f}")
     print(f"  record:       {path}")
     return 0
+
+
+def cmd_bootstrap_verify(args: argparse.Namespace) -> int:
+    """Runtime §6.3 — verify the bootstrap anchor across channels."""
+    channels: list[Channel] = []
+    for raw in args.channel:
+        if "=" not in raw:
+            sys.stderr.write(f"error: --channel expected NAME=FINGERPRINT, got {raw!r}\n")
+            return 2
+        name, fp = raw.split("=", 1)
+        channels.append(Channel(name=name.strip(), fingerprint_hex=fp.strip()))
+
+    root_bytes: bytes | None = None
+    if args.root_metadata:
+        try:
+            root_bytes = load_root_metadata(args.root_metadata)
+        except OSError as e:
+            sys.stderr.write(f"error: could not read root metadata: {e}\n")
+            return 2
+
+    try:
+        report = verify_bootstrap_anchor(
+            channels, root_metadata_bytes=root_bytes,
+            min_channels=args.min_channels,
+        )
+    except BootstrapAnchorError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
+
+    print(f"bootstrap anchor verify — channels: {', '.join(report.channels_seen)}")
+    print(f"  agreed fingerprint: {report.agreed_fingerprint or '(none)'}")
+    if report.root_metadata_sha256:
+        print(f"  root sha256:        {report.root_metadata_sha256}")
+    if report.reasons:
+        print("  failures:")
+        for r in report.reasons:
+            print(f"    - {r}")
+    print(f"  verdict: {'OK' if report.ok else 'FAIL'}")
+    return 0 if report.ok else 13
 
 
 def cmd_integrity_manifest(args: argparse.Namespace) -> int:
@@ -781,6 +822,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("run_id", help="run_id to replay")
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_replay_incident)
+
+    sp = sub.add_parser("bootstrap-verify",
+                        help="verify the Runtime §6.3 multi-channel bootstrap anchor")
+    sp.add_argument("--channel", action="append", required=True,
+                    help="NAME=FINGERPRINT (repeat >=2 times)")
+    sp.add_argument("--root-metadata", default=None,
+                    help="path to downloaded root metadata; sha256 must match fingerprint")
+    sp.add_argument("--min-channels", type=int, default=2,
+                    help="minimum agreeing channels required (default 2)")
+    sp.set_defaults(func=cmd_bootstrap_verify)
 
     sp = sub.add_parser("integrity-manifest",
                         help="build SHA-256 manifest of a directory tree")

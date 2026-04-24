@@ -4,6 +4,13 @@ See docs/spec/AIOS_Distribution_Spec.md.
 """
 from __future__ import annotations
 
+from aios.distribution.bootstrap import (
+    BootstrapAnchorError,
+    BootstrapVerifyReport,
+    Channel,
+    load_root_metadata,
+    verify_bootstrap_anchor,
+)
 from aios.distribution.integrity import (
     FileEntry,
     IntegrityManifest,
