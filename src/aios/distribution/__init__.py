@@ -18,6 +18,14 @@ from aios.distribution.install import (
     install_package,
     list_installed_versions,
 )
+from aios.distribution.rollback import (
+    RollbackError,
+    RollbackResult,
+    UninstallError,
+    UninstallResult,
+    rollback_to,
+    uninstall,
+)
 from aios.distribution.upgrade import (
     UpgradeError,
     UpgradeResult,
