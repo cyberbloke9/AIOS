@@ -530,6 +530,47 @@ class EventLog:
     def current_seq(self) -> int:
         return self._next_seq
 
+    # ----- §1.8 snapshot production + replay -----
+
+    def create_snapshot(self, projections: dict[str, Any],
+                        *, actor: str = "A5") -> Frame:
+        """§1.8 — emit a snapshot frame covering `projections` at the
+        current head LSN.
+
+        Each projection value is CBOR-encoded, SHA-256 hashed, and
+        written content-addressed to <root>/snapshot-blobs/<name>-<hex>.cbor.
+        The snapshot frame's payload references the blob by hash so a
+        later reader can verify: read the snapshot frame, read the
+        referenced blob, hash the blob, check equality to state_hash.
+
+        Snapshots are appended like any other frame and participate in
+        the hash chain. They carry kind="snapshot" and actor=A5 by
+        default (Release & Security authority).
+        """
+        blobs_dir = self.root / "snapshot-blobs"
+        blobs_dir.mkdir(parents=True, exist_ok=True)
+
+        projections_meta: dict[str, dict] = {}
+        for name, state in projections.items():
+            blob_bytes = cbor_encode(state)
+            state_hash = sha256(blob_bytes)
+            filename = f"{name}-{state_hash.hex()}.cbor"
+            (blobs_dir / filename).write_bytes(blob_bytes)
+            projections_meta[name] = {
+                "state_hash": state_hash,
+                "state_ref": f"snapshot-blobs/{filename}",
+            }
+
+        as_of_seq = self._next_seq - 1 if self._next_seq > 0 else -1
+        return self.append(
+            kind="snapshot",
+            actor=actor,
+            payload={
+                "as_of_seq": as_of_seq,
+                "projections": projections_meta,
+            },
+        )
+
     def close(self):
         if self._active_handle is not None:
             self._active_handle.close()
