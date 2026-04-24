@@ -34,6 +34,9 @@ from aios.verification.calibration_status import (
     check_calibration_status,
     record_calibration_attempt,
 )
+from aios.verification.credentials import (
+    CredentialError, CredentialLedger,
+)
 from aios.verification.conservation_scan import (
     ADREvent, ContextLoad, Decision, EventLogRange, GenerationSlice,
     Invariant, RunState, VerificationSlice, _chain_hash,
@@ -345,6 +348,46 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_credential_status(args: argparse.Namespace) -> int:
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+    try:
+        ledger = CredentialLedger(home)
+    except CredentialError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
+    entities = ledger.list_entities()
+    if not entities:
+        print("no credentials in ledger (seed with `aios credential seed ENTITY`)")
+        return 0
+    print(f"{'entity':<20} {'phase':<6} {'standing':<10} {'local':<7} {'subsys':<7} {'system':<7}")
+    for eid in entities:
+        rec = ledger.get(eid)
+        bands = rec.competency_bands
+        print(f"{eid:<20} {rec.phase:<6} {rec.standing:.3f}      "
+              f"{bands.get('local', bands['local']).standing:.3f}   "
+              f"{bands['subsystem'].standing:.3f}   "
+              f"{bands['system_wide'].standing:.3f}")
+    return 0
+
+
+def cmd_credential_seed(args: argparse.Namespace) -> int:
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+    ledger = CredentialLedger(home)
+    try:
+        rec = ledger.seed(args.entity_id)
+    except CredentialError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 1
+    ledger.save()
+    print(f"seeded credential for {rec.entity_id} at phase={rec.phase} "
+          f"standing={rec.standing:.3f}")
+    return 0
+
+
 def cmd_calibration_status(args: argparse.Namespace) -> int:
     home = _home_from_args(args)
     if not _require_initialized(home):
@@ -590,6 +633,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("skill_id")
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_calibration_status)
+
+    sp = sub.add_parser("credential-status",
+                        help="show all credentials in the ledger (phase + standing)")
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_credential_status)
+
+    sp = sub.add_parser("credential-seed",
+                        help="seed a new Phase 0 credential for ENTITY")
+    sp.add_argument("entity_id", help="entity identifier (e.g. A4 or SK-ADR-CHECK)")
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_credential_seed)
 
     sp = sub.add_parser("check",
                         help="one-shot project scan: Q1-Q3 + SK-ADR-CHECK")
