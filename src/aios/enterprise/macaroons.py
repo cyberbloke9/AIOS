@@ -41,7 +41,7 @@ from aios.enterprise.signing import (
 )
 from aios.runtime.event_log import cbor_encode
 
-CaveatType = Literal["time", "scope", "predicate", "audience"]
+CaveatType = Literal["time", "scope", "predicate", "audience", "pop"]
 TOKEN_VERSION = 1
 
 # §2.5 default skew tolerance
@@ -155,7 +155,7 @@ def add_caveat(
     cannot REMOVE caveats without breaking the chain, so this only
     narrows authority.
     """
-    if caveat_type not in ("time", "scope", "predicate", "audience"):
+    if caveat_type not in ("time", "scope", "predicate", "audience", "pop"):
         raise MacaroonError(f"unknown caveat type {caveat_type!r}")
 
     prior_mac = token.caveats[-1].mac if token.caveats else token.sig
@@ -286,6 +286,15 @@ def _apply_caveat(cav: Caveat, ctx: VerifyContext,
                 f"caveat[{index}]: audience mismatch "
                 f"(token={expected!r} context={ctx.audience!r})"
             )
+    elif cav.type == "pop":
+        # §2.8 — pop caveats MUST be verified via verify_with_pop(), not
+        # verify_token(). Reaching this path means the caller is
+        # attempting to verify a pop-bound token without presenting a
+        # proof of possession.
+        raise TokenVerificationError(
+            f"caveat[{index}]: pop caveat requires verify_with_pop() "
+            f"and a signed proof of possession"
+        )
     elif cav.type == "predicate":
         if not isinstance(cav.value, dict):
             raise TokenVerificationError(
@@ -307,6 +316,149 @@ def _apply_caveat(cav: Caveat, ctx: VerifyContext,
         raise TokenVerificationError(
             f"caveat[{index}]: unknown type {cav.type!r}"
         )
+
+
+def add_pop_caveat(
+    token: CapabilityToken, *, subject_pubkey: bytes,
+) -> CapabilityToken:
+    """§2.8 — bind the token to a subject-held Ed25519 key.
+
+    After this call, the token can only be verified via verify_with_pop,
+    and only when the caller presents a proof-of-possession signature
+    made with the matching private key. Defeats token theft: an
+    interceptor without the subject's private key cannot use the
+    stolen token.
+    """
+    if len(subject_pubkey) != 32:
+        raise MacaroonError(
+            f"pop subject pubkey must be 32 bytes (Ed25519), got "
+            f"{len(subject_pubkey)}"
+        )
+    return add_caveat(token, caveat_type="pop",
+                      value={"pubkey_hex": subject_pubkey.hex()})
+
+
+def verify_with_pop(
+    token: CapabilityToken,
+    *,
+    issuer_pubkey: bytes,
+    context: VerifyContext,
+    proof_message: bytes,
+    proof_sig: bytes,
+    clock_skew_ns: int = _DEFAULT_CLOCK_SKEW_NS,
+) -> None:
+    """§2.8 verification — base token + proof-of-possession.
+
+    Runs the normal verify flow with the pop caveats temporarily
+    accepted (they are checked by this function instead), then:
+
+      - Locates the pop-bound pubkey from the token's pop caveat(s)
+      - Verifies proof_sig is a valid Ed25519 signature over
+        proof_message using that pubkey
+
+    Multiple pop caveats are supported (rare but allowed); every pop
+    pubkey must have a matching proof component — but v1 accepts the
+    SAME proof_sig/message for all pop caveats so the caller holds
+    only one private key. Raises TokenVerificationError on any
+    failure.
+    """
+    if not cryptography_available():
+        raise TokenVerificationError(
+            "cryptography package required to verify pop"
+        )
+    if len(proof_sig) != 64:
+        raise TokenVerificationError(
+            f"pop proof_sig must be 64 bytes (Ed25519), got {len(proof_sig)}"
+        )
+
+    # Temporarily strip pop caveats from the token so the normal
+    # _apply_caveat path doesn't reject them.
+    stripped_caveats = tuple(c for c in token.caveats if c.type != "pop")
+    pop_caveats = tuple(c for c in token.caveats if c.type == "pop")
+    if not pop_caveats:
+        raise TokenVerificationError(
+            "token has no pop caveat; use verify_token() for bare tokens"
+        )
+
+    # Re-chain the stripped caveats so their MACs still verify against
+    # the base signature. We can't actually strip — the MACs depend on
+    # the full chain. So we verify the FULL chain, but teach
+    # _apply_caveat to ignore pop for this call.
+    #
+    # Implementation: copy verify_token inline with a pop-tolerant
+    # _apply_caveat replacement.
+    if token.v != TOKEN_VERSION:
+        raise TokenVerificationError(
+            f"unsupported token version: {token.v}"
+        )
+
+    verifier = Ed25519Verifier(issuer_pubkey)
+    try:
+        verifier.verify(token.base_bytes(), token.sig)
+    except SignatureVerificationError as e:
+        raise TokenVerificationError(f"base signature invalid: {e}") from e
+
+    # MAC chain
+    prior_mac = token.sig
+    for i, cav in enumerate(token.caveats):
+        expected = hmac.new(prior_mac, cav.payload_bytes(),
+                            hashlib.sha256).digest()
+        if not hmac.compare_digest(expected, cav.mac):
+            raise TokenVerificationError(f"caveat[{i}] MAC chain broken")
+        prior_mac = cav.mac
+
+    # Context checks
+    if token.sub != context.subject:
+        raise TokenVerificationError(
+            f"subject mismatch: token.sub={token.sub!r}")
+    if token.act != context.action:
+        raise TokenVerificationError(
+            f"action mismatch: token.act={token.act!r}")
+    if not _scope_covers(token.scp, context.scope):
+        raise TokenVerificationError("scope does not cover context")
+    if context.now_ns + clock_skew_ns < token.nbf_ns:
+        raise TokenVerificationError("token not yet valid")
+    if context.now_ns - clock_skew_ns > token.exp_ns:
+        raise TokenVerificationError("token expired")
+
+    # Non-pop caveats apply normally; pop caveats deferred to the
+    # proof-verify step below
+    for i, cav in enumerate(token.caveats):
+        if cav.type == "pop":
+            continue
+        _apply_caveat(cav, context, clock_skew_ns, index=i)
+
+    # §2.8 proof-of-possession: verify proof_sig against each pop
+    # caveat's bound key (all must succeed; typical case is one pop
+    # caveat with one key).
+    for i, cav in enumerate(pop_caveats):
+        if not isinstance(cav.value, dict):
+            raise TokenVerificationError(
+                f"pop caveat[{i}]: value must be a dict"
+            )
+        pk_hex = cav.value.get("pubkey_hex")
+        if not isinstance(pk_hex, str):
+            raise TokenVerificationError(
+                f"pop caveat[{i}]: missing pubkey_hex"
+            )
+        try:
+            pk = bytes.fromhex(pk_hex)
+        except ValueError as e:
+            raise TokenVerificationError(
+                f"pop caveat[{i}]: pubkey_hex not valid hex: {e}"
+            ) from e
+        if len(pk) != 32:
+            raise TokenVerificationError(
+                f"pop caveat[{i}]: pubkey is {len(pk)} bytes, need 32"
+            )
+        pop_verifier = Ed25519Verifier(pk)
+        try:
+            pop_verifier.verify(proof_message, proof_sig)
+        except SignatureVerificationError as e:
+            raise TokenVerificationError(
+                f"pop caveat[{i}]: proof-of-possession signature invalid "
+                f"({e})"
+            ) from e
 
 
 def _scope_covers(scope: dict, ctx_scope: dict) -> bool:
