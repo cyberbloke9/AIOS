@@ -130,7 +130,7 @@ class Frame:
     payload: dict
     sig: bytes | None = None
 
-    def to_cbor(self) -> bytes:
+    def _as_map(self, include_sig: bool) -> dict:
         m: dict = {
             "v": self.v,
             "seq": self.seq,
@@ -140,9 +140,24 @@ class Frame:
             "actor": self.actor,
             "payload": self.payload,
         }
-        if self.sig is not None:
+        if include_sig and self.sig is not None:
             m["sig"] = self.sig
-        return cbor_encode(m)
+        return m
+
+    def unsigned_cbor(self) -> bytes:
+        """CBOR of the 7 signature-agnostic fields. This is what an
+        Ed25519 signer signs — the sig field is added to the frame
+        after signing to avoid the signature-over-signature cycle."""
+        return cbor_encode(self._as_map(include_sig=False))
+
+    def to_cbor(self) -> bytes:
+        """Canonical CBOR for hash-chain, replay, on-disk framing.
+
+        When `sig` is set, the on-disk form includes it. The frame hash
+        (and therefore the `prev` chain) covers `sig` so replaying past
+        a tampered signature breaks the next frame's prev verification.
+        """
+        return cbor_encode(self._as_map(include_sig=True))
 
     def frame_hash(self) -> bytes:
         return sha256(self.to_cbor())
@@ -256,11 +271,15 @@ class EventLog:
 
     def __init__(self, root: str | os.PathLike, *,
                  rotate_after_frames: int = 100_000,
-                 rotate_after_bytes: int = 64 * 1024 * 1024):
+                 rotate_after_bytes: int = 64 * 1024 * 1024,
+                 signer: Any = None,
+                 verifier: Any = None):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.rotate_after_frames = rotate_after_frames
         self.rotate_after_bytes = rotate_after_bytes
+        self._signer = signer
+        self._verifier = verifier
 
         self._active_path: Path | None = None
         self._active_handle = None
@@ -383,6 +402,10 @@ class EventLog:
             payload=payload,
             sig=sig,
         )
+        # Auto-sign: if the caller did not supply a sig and this log was
+        # constructed with a signer, sign the unsigned-CBOR form now.
+        if frame.sig is None and self._signer is not None:
+            frame = dc.replace(frame, sig=self._signer.sign(frame.unsigned_cbor()))
         cbor_bytes = frame.to_cbor()
         on_disk = _encode_on_disk(cbor_bytes)
         assert self._active_handle is not None
@@ -491,6 +514,12 @@ class EventLog:
                         raise ValueError(
                             f"frame seq mismatch: expected {expected_seq}, got {frame.seq}"
                         )
+                    # §1.2 / §9.1: if a verifier is configured AND the
+                    # frame carries a `sig`, verify it. A verifier is set
+                    # but the frame is unsigned, or vice versa, is the
+                    # operator's call — neither condition is flagged here.
+                    if self._verifier is not None and frame.sig is not None:
+                        self._verifier.verify(frame.unsigned_cbor(), frame.sig)
                     expected_prev = frame_hash
                     expected_seq = frame.seq + 1
                     yield frame
