@@ -29,7 +29,10 @@ See `docs/coverage.md` for the full normative / not-covered breakdown.
 ## Install
 
 ```
-pip install -e .
+pip install aios                    # once published to PyPI
+pip install aios[enterprise]        # adds cryptography (Ed25519) + PyYAML
+pip install -e .                    # editable, from a clone
+pip install -e ".[enterprise,dev]"  # editable + extras
 ```
 
 ## Quickstart
@@ -37,10 +40,20 @@ pip install -e .
 ```
 aios --help
 aios init ./my-aios-home --profile P-Local
-aios append --kind run.started --actor A1 --payload '{"run_id":"r001"}'
-aios replay
-aios scan --run-id r001
-aios check-profile
+aios append --home ./my-aios-home --kind run.started --actor A1 --payload '{"run_id":"r001"}'
+aios replay --home ./my-aios-home
+aios scan --home ./my-aios-home
+aios check-profile --home ./my-aios-home
+aios run ./workflow.yaml --home ./my-aios-home --run-json ./run.json
+```
+
+A minimal `workflow.yaml`:
+
+```yaml
+id: my-workflow
+version: 1.0.0
+impact: local          # local | subsystem | system_wide
+description: demo
 ```
 
 ## Not implemented in this build

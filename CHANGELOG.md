@@ -2,7 +2,55 @@
 
 All notable changes to this project will be documented here.
 
-## [0.1.0] — unreleased (P-Local first build)
+## [0.2.0] — unreleased (Option 1 + 2 + 3: P-Enterprise partial + workflow orchestrator + CI/release)
+
+### Added
+
+- **Ed25519 frame signing** (`aios.enterprise.signing.Ed25519Signer/Verifier`).
+  `pip install aios[enterprise]` brings `cryptography` and `PyYAML`.
+  `EventLog(signer=..., verifier=...)` auto-signs on append and verifies
+  on replay. `Frame.unsigned_cbor()` is the signature target to avoid
+  signature-over-signature cycles.
+- **Single-writer file lock** (`aios.runtime.filelock.FileLock`).
+  POSIX `fcntl.flock` / Windows `msvcrt.locking`. `EventLog.__init__`
+  acquires `<root>/log.lock`; second opener raises `LockContentionError`.
+  Runtime Protocol §5.1 is now enforced, not just asserted.
+- **P-Enterprise partial loader support**. `aios check-profile` with
+  `profile=P-Enterprise` no longer uniformly refuses; it runs richer
+  checks (`ed25519_available`, `writer_lock_active`) and names the
+  remaining unimplemented features (TUF, credentialing, calibration,
+  audit, SBOM) individually.
+- **Workflow manifest schema** (`aios.workflow.manifest.WorkflowManifest`).
+  YAML or JSON. Kernel §1.2 impact-level default gate sets. Validates
+  every gate against the registry.
+- **Workflow runner** (`aios.workflow.runner.WorkflowRunner`). Kernel §2.2
+  lifecycle: emits run.started / gate.evaluated* / (run.aborted |
+  artifact.rejected | artifact.promoted). Q1-Q3 breach aborts
+  immediately; stubs cause rejection (no silent pass).
+- **`aios run <manifest>`** CLI subcommand. Exit 0 promoted / 4
+  soundness-breach / 6 other rejection.
+- **GitHub Actions CI** (.github/workflows/ci.yml) — 3 OS × 2 Python
+  matrix with enterprise extras, plus a stdlib-only minimal job.
+  End-to-end CLI smoke test on every run.
+- **Release workflow** (.github/workflows/release.yml) — tag-triggered
+  build + test + PyPI trusted publishing + GitHub Release.
+
+### Test count
+
+170/170 pass on the enterprise install.
+
+### Known limitations still deferred (see docs/coverage.md)
+
+- TUF client + bootstrap anchor verification (§6)
+- Merkle batch overlay (§1.5) — required only for P-HighAssurance
+- DPoP proof-of-possession on tokens (§2.8)
+- Snapshots and compaction (§1.7, §1.8)
+- Credentialing Phase 0 and Phase 1 (Verification §3)
+- Calibration protocol with corpus-quality rules (Verification §2)
+- Audit protocol and G1-G7 taxonomy (Verification §4)
+- SBOM production + Sigstore/Rekor signed releases (Distribution §5)
+
+## [0.1.0] — 2026-04-24 (P-Local first build)
 
 First build per the v8 closure-pass success criteria:
 

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aios"
-version = "0.1.0"
-description = "AIOS v8 P-Local reference implementation: event log, conservation scan, gate registry, CLI"
+version = "0.2.0"
+description = "AIOS v8 reference implementation: event log, conservation scan, gate registry, workflow runner, CLI. P-Local fully supported; P-Enterprise partial."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
