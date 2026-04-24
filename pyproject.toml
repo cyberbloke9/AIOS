@@ -23,7 +23,11 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Logging",
 ]
-dependencies = []
+dependencies = [
+    # Used by the Verification §1.2 core predicate P_schema_valid
+    # (T3 schema check). Draft 2020-12 support + good error paths.
+    "jsonschema>=4.20",
+]
 
 [project.optional-dependencies]
 dev = [

@@ -25,6 +25,7 @@ from aios.verification.conservation_scan import (
     scan_q2_state_traceability,
     scan_q3_decision_reversibility,
 )
+from aios.verification.schema_check import p_schema_valid
 
 AuthorityId = Literal["A1", "A2", "A3", "A4", "A5"]
 GateType = Literal["T1", "T2", "T3", "T4"]
@@ -190,7 +191,9 @@ def _core_records() -> list[PredicateRecord]:
             soundness_class="O5",
             implementation=scan_o5_context_sufficiency_hard,
         ),
-        # §1.2: generic schema check — deferred. Workflows supply their own.
+        # §1.2: generic schema check via jsonschema (Draft 2020-12).
+        # Workflows supply {artifact, schema} as kwargs; the default call
+        # shape with no artifact returns preserved (nothing to validate).
         PredicateRecord(
             id="P_schema_valid",
             version="1.0.0",
@@ -203,7 +206,7 @@ def _core_records() -> list[PredicateRecord]:
             reference_vectors="reference_vectors/P_schema_valid.json",
             failure_level="major",
             soundness_class="other",
-            implementation=None,  # requires a concrete target schema per call
+            implementation=p_schema_valid,
         ),
         # §1.2: prompt-injection sentinel — deferred to v2 (requires a
         # calibrated classifier + adversarial corpus).

@@ -147,13 +147,16 @@ def test_promoted_run_emits_promoted_frame():
 
 
 def test_stub_predicate_causes_rejection_not_silent_pass():
-    """Using the full local default set (which includes P_schema_valid stub),
-    the run must be rejected — stubs cannot silently pass."""
+    """A workflow that explicitly includes a still-stub predicate
+    (P_PI_sentinel) must be rejected — stubs cannot silently pass.
+    P_schema_valid is no longer a stub as of sprint 25, so we reach
+    for P_PI_sentinel to keep the semantic test alive."""
     manifest = parse_manifest(json.dumps({
         "id": "stub-demo",
         "version": "1.0",
         "impact": "local",
-    }))  # default gates include P_schema_valid which is a stub
+        "required_gates": ["P_PI_sentinel"],
+    }))
 
     with tempfile.TemporaryDirectory() as tmp:
         log = EventLog(tmp)
@@ -165,7 +168,7 @@ def test_stub_predicate_causes_rejection_not_silent_pass():
         stub_results = [g for g in result.gate_results
                         if g.status == "not_implemented"]
         assert stub_results
-        assert any(g.predicate_id == "P_schema_valid" for g in stub_results)
+        assert any(g.predicate_id == "P_PI_sentinel" for g in stub_results)
 
 
 def test_subsystem_runs_m4_and_o5():

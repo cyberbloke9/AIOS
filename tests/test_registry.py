@@ -105,9 +105,13 @@ def test_evaluate_stub_predicate_raises_not_implemented():
         default_registry.evaluate("P_PI_sentinel", _sample_run())
 
 
-def test_evaluate_schema_valid_stub_raises_not_implemented():
-    with pytest.raises(NotImplementedPredicateError):
-        default_registry.evaluate("P_schema_valid", _sample_run())
+def test_evaluate_schema_valid_no_args_returns_preserved_with_note():
+    # Sprint 25 promoted P_schema_valid from stub to real jsonschema-backed
+    # predicate. With no artifact/schema kwargs, it returns preserved +
+    # a note. With invalid content it would return breached.
+    result = default_registry.evaluate("P_schema_valid", _sample_run())
+    assert result["status"] == "preserved"
+    assert "note" in result
 
 
 def test_registry_double_register_raises():
