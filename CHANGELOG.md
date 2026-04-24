@@ -2,6 +2,87 @@
 
 All notable changes to this project will be documented here.
 
+## [0.4.0] — unreleased (M4: make it safe)
+
+Verification §§2, 3, 4 implemented. Every §1.2 core predicate is now
+real. Skills that emit confidence scalars can be calibrated against
+rules that refuse weak corpora; credentialing has a §3.1-gated Phase
+0 → Phase 1 transition; audit G1–G7 scans + incident replay exist.
+
+### Added
+
+- **Calibration metrics** (`verification.calibration_metrics`) — Brier
+  score + Expected Calibration Error, stdlib-only. §2.2 thresholds
+  (Brier ≤ 0.25, ECE ≤ 0.10) encoded as default parameters.
+- **Corpus quality rules** (`verification.corpus`) — six §2.3 checks
+  enforced as loader-level refusals. `CorpusQualityError` names the
+  failing rule. Honesty enforced: declared adversarial share + class
+  imbalance must match computed values ±1%.
+- **Calibration methods** — `temperature_scaling` (grid + local refine)
+  and `platt_scaling` (gradient descent, deterministic init) in
+  `verification.calibration`. Linear-probe and self-consistency stay
+  deferred.
+- **CalibrationRecord + persistence** — §2.4 schema with to_json /
+  from_json. `aios calibrate <SK-ID> --corpus ... --method ...`
+  CLI saves the record; any threshold failure exits 7 and records the
+  attempt in the sidecar.
+- **Calibration drift + quarantine** — weekly/monthly windows,
+  `<skill>.attempts.json` sidecar, three-failures-in-30d → quarantined.
+  `aios calibration-status` CLI with exit codes 0 / 8 / 9.
+- **Credential ledger** — `verification.credentials` + §3.2 schema.
+  `BandStanding` encapsulates +α/-β/-γ/+δ/-ε transitions; ledger
+  persists to `<home>/credentials/ledger.json`. `aios credential-seed`
+  / `aios credential-status` CLI.
+- **Phase 0 gate accuracy** — `verification.phase0.measure_gate_accuracy`
+  with §3.1 thresholds by failure level. Stubs count as FN 1.0 — no
+  sneak-through for unimplemented predicates.
+- **Contamination audit + incident backtesting** — `verification.backtest`
+  with §3.1 overlap threshold 0.05 and contamination-tolerant escape
+  hatch. Backtest surfaces hit_rate + missed_incident_ids.
+- **Phase 0 → Phase 1 transition** — `verification.phase1.check_phase1_
+  readiness` aggregates all §3.1 prerequisites; `enable_phase1` flips
+  every phase=0 credential after verifying readiness AND A4 + A5
+  co-signers. Idempotent.
+- **Phase 1 update rule** — `verification.phase1_update.apply_run_
+  outcome` applies §3.3 weights with monotone-bands constraint
+  (system_wide ≤ subsystem ≤ local). §3.5 restitution: 90-day window,
+  budget 10, frozen standing while in restitution, doubled budget
+  on recurrence.
+- **Band capability mapping** — `capability_for_band(standing)` →
+  quarantined / supervised / standard / sole_verifier per §3.4.
+- **Audit protocol** — `verification.audit` with seven `scan_*`
+  primitives producing AuditEvents for G1–G7 classes. `AuditReport`
+  rolls up by class; `.summary()` includes containment strategy per
+  §4.3.
+- **Incident replay** — `verification.incident_replay.replay_incident`
+  reconstructs workflow from frames, attributes G-class (G1 for zero
+  gate.evaluated, G2 for uncaught Q-breach, G6 for stub encountered).
+  `aios replay-incident <run_id>` CLI, exit codes 0 / 10 / 11.
+- **Real P_PI_sentinel** — pattern-based deterministic detector for
+  role_escape / system_prompt_leak / identity_hijack / tool_hijack /
+  delimiter_smuggle. Registered via default_registry; retires the
+  sprint-4 stub.
+- **Real P_acceptance_tests** — subprocess pytest wrapper with
+  timeout + exit-code mapping + summary-line parser. Retires the
+  last §1.2 core-predicate stub.
+
+### Test count
+
+495/495 pass with the enterprise extra installed.
+
+### Deferred (remaining for M5/M6)
+
+- TUF client + multi-channel bootstrap anchor (§6)
+- Merkle batch overlay (§1.5) — P-HighAssurance only
+- Snapshots + compaction (§1.7, §1.8)
+- Sigstore/Rekor signed releases + SBOM (Distribution §5)
+- Install/upgrade/rollback/uninstall atomic shadow dir (Dist §4.2-4.4)
+- DPoP proof-of-possession (§2.8)
+- Kill switch daemon (Kernel §5)
+- SK-THREAT-MODEL / SK-DEBATE-N3 skills
+- Subprocess sandboxing for P_acceptance_tests
+- TLA+ formal model of §5 ordering
+
 ## [0.3.0] — unreleased (M3: make it usable)
 
 The first build a real developer can point at their repo and have
