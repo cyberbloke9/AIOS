@@ -11,6 +11,20 @@ from aios.distribution.integrity import (
     build_integrity_manifest,
     verify_install,
 )
+from aios.distribution.tuf import (
+    RootContent,
+    SignedMetadata,
+    TargetEntry,
+    TargetHash,
+    TargetsContent,
+    TufKey,
+    TufMetadataError,
+    TufRoleSpec,
+    TufSignature,
+    TufVerificationError,
+    root_metadata_fingerprint,
+    verify_signed_metadata,
+)
 from aios.distribution.sbom_cyclonedx import (
     CycloneDXDocument,
     generate_cyclonedx,
