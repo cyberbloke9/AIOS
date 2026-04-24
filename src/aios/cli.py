@@ -37,6 +37,7 @@ from aios.verification.calibration_status import (
 from aios.verification.credentials import (
     CredentialError, CredentialLedger,
 )
+from aios.verification.incident_replay import replay_incident_from_home
 from aios.verification.conservation_scan import (
     ADREvent, ContextLoad, Decision, EventLogRange, GenerationSlice,
     Invariant, RunState, VerificationSlice, _chain_hash,
@@ -348,6 +349,24 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_replay_incident(args: argparse.Namespace) -> int:
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+
+    try:
+        report = replay_incident_from_home(home, args.run_id)
+    except (OSError, ValueError) as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
+
+    print(report.summary())
+    if report.frame_count == 0:
+        sys.stderr.write(f"warning: no frames found for run_id={args.run_id!r}\n")
+        return 10
+    return 0 if report.caught else 11
+
+
 def cmd_credential_status(args: argparse.Namespace) -> int:
     home = _home_from_args(args)
     if not _require_initialized(home):
@@ -638,6 +657,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="show all credentials in the ledger (phase + standing)")
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_credential_status)
+
+    sp = sub.add_parser("replay-incident",
+                        help="replay a run_id's frames and attribute a G-class")
+    sp.add_argument("run_id", help="run_id to replay")
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_replay_incident)
 
     sp = sub.add_parser("credential-seed",
                         help="seed a new Phase 0 credential for ENTITY")
