@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    name: test (${{ matrix.os }} / py${{ matrix.python-version }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package (with enterprise + dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[enterprise,dev]"
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Verify CLI entry point installed
+        run: aios --version
+
+      - name: Smoke-test init -> append -> replay -> check-profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _ci_home
+          aios init _ci_home --profile P-Local
+          aios append --home _ci_home --kind ci.smoke --actor A1 --payload '{"build":"ci"}'
+          aios replay --home _ci_home | tail -5
+          aios check-profile --home _ci_home
+          rm -rf _ci_home
+
+  test-minimal:
+    name: test (minimal install, stdlib only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install package (no enterprise extra)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run core test suite (Ed25519 tests skip without cryptography)
+        run: python -m pytest -q --deselect tests/test_ed25519.py --deselect tests/test_event_log_signing.py --deselect tests/test_adversarial_v02.py --deselect tests/test_profile_v02.py
