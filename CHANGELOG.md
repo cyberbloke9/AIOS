@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented here.
 
+## [0.5.0] — unreleased (M5: make it deployable)
+
+Runtime §§1.7–1.8 (snapshots + compaction), Distribution §§4.1–4.4
+(install/upgrade/rollback/uninstall), Distribution §5 (signed releases,
+SBOM), and Runtime §6.2–6.3 (TUF roles + bootstrap anchor) implemented.
+
+### Added
+
+- **§1.8 snapshots.** `EventLog.create_snapshot`, `find_latest_snapshot`,
+  `load_snapshot_state`, `replay_from_snapshot`. Content-addressed
+  blobs under `<root>/snapshot-blobs/<name>-<hex>.cbor`. Enables
+  O(snapshot + new) replay.
+- **§1.7 compaction.** `EventLog.compact(through_seq, projections)`
+  plus `aios compact` CLI. Flag bit 1 on compacted segments; source
+  segments retained per §1.7 retention rule.
+- **SBOM generators** — SPDX 2.3 primary + CycloneDX 1.5 secondary.
+  Both scan `importlib.metadata`. `aios sbom [--format spdx|cyclonedx]
+  [--output]` CLI.
+- **Integrity manifest.** SHA-256 per file + tree hash. `aios
+  integrity-manifest` + `aios verify-install` (exit 12 on mismatch).
+- **TUF role metadata + threshold signatures (§6.2).** `TufKey`,
+  `TufRoleSpec`, `SignedMetadata` with canonical-CBOR sign bytes +
+  Ed25519 threshold verify. `root_metadata_fingerprint` for §6.3.
+- **§6.3 multi-channel bootstrap anchor.** `verify_bootstrap_anchor`
+  requires ≥ 2 channels agreeing + root metadata hash matching.
+  `aios bootstrap-verify` CLI (exit 13 on disagreement).
+- **Signed release bundle.** `build_release_bundle` +
+  `verify_release_bundle`. Canonical JSON sign bytes exclude
+  signatures; artifact hashes + kind inference; threshold via
+  `min_signatures`.
+- **§4.1 atomic shadow-dir install.** `install_package` stages in
+  `.versions/.staging-V/` then atomic rename; pointer file flipped
+  with `os.replace` (portable across POSIX + Windows without
+  elevated privileges).
+- **§4.2 upgrade + migration.** `upgrade_package` — cross-major
+  requires `migration_fn`, pre + post Q2 scan, pointer rollback on
+  post-Q2 failure.
+- **§4.3 rollback.** `rollback_to` flips pointer to any installed
+  `.versions/V/`; round-trippable, atomic.
+- **§4.4 uninstall.** Standard archives events + config + registry +
+  projections + snapshot-blobs into tar.gz. `force_purge=True`
+  skips archive. Refuses non-AIOS directories (typo safety).
+
+### Test count
+
+673/673 pass with enterprise extra.
+
+### Still deferred (remaining for M6)
+
+- Merkle batch overlay (§1.5) — P-HighAssurance only
+- DPoP proof-of-possession tokens (§2.8)
+- Sigstore/Rekor network integration
+- Full TUF 4-role chain verification w/ staleness + freshness
+- §6.4 key rotation ADR machinery
+- Kernel §5 kill-switch daemon
+- Subprocess sandboxing for P_acceptance_tests
+- SK-THREAT-MODEL / SK-DEBATE-N3 skills
+- TLA+ formal model of §5 ordering
+
 ## [0.4.0] — unreleased (M4: make it safe)
 
 Verification §§2, 3, 4 implemented. Every §1.2 core predicate is now

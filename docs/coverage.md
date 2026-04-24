@@ -1,8 +1,8 @@
 # Coverage matrix
 
 > What the current build implements and what it deliberately does not.
-> Living document updated per release. Current: **v0.3.0** (M3 —
-> "make it usable").
+> Living document updated per release. Current: **v0.5.0** (M5 —
+> "make it deployable").
 > The authoritative source is Runtime Protocol §8.1 (normative covered
 > vs. not-covered for `event_log.py`). This document extends §8.1 to
 > the whole package.
