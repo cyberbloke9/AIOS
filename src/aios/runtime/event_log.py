@@ -572,6 +572,55 @@ class EventLog:
             },
         )
 
+    def create_merkle_batch(
+        self, *, batch_start_seq: int, batch_end_seq: int,
+        actor: str = "A5",
+    ) -> Frame:
+        """§1.5 — compute Merkle tree over frame hashes in [start, end]
+        inclusive and emit a kind='merkle.batch' frame with the root.
+
+        RFC 6962 structure via aios.runtime.merkle. Third-party Merkle
+        clients written to RFC 6962 can verify AIOS batch roots without
+        AIOS-specific tooling.
+        """
+        from aios.runtime.merkle import merkle_tree_hash_of_hashes
+
+        if batch_start_seq < 0 or batch_end_seq < batch_start_seq:
+            raise ValueError(
+                f"invalid range [{batch_start_seq}, {batch_end_seq}]"
+            )
+        if batch_end_seq >= self._next_seq:
+            raise ValueError(
+                f"batch_end_seq={batch_end_seq} is past current head "
+                f"{self._next_seq - 1}"
+            )
+
+        # Walk replay, keeping frame hashes for frames in the range.
+        leaf_hashes: list[bytes] = []
+        for frame in self.replay():
+            if frame.seq > batch_end_seq:
+                break
+            if frame.seq >= batch_start_seq:
+                leaf_hashes.append(frame.frame_hash())
+
+        if not leaf_hashes:
+            raise ValueError(
+                f"no frames in [{batch_start_seq}, {batch_end_seq}]"
+            )
+
+        root = merkle_tree_hash_of_hashes(leaf_hashes)
+
+        return self.append(
+            kind="merkle.batch",
+            actor=actor,
+            payload={
+                "batch_start_seq": batch_start_seq,
+                "batch_end_seq": batch_end_seq,
+                "leaf_count": len(leaf_hashes),
+                "merkle_root": root,
+            },
+        )
+
     def compact(self, *, through_seq: int,
                 projections: dict[str, Any]) -> dict:
         """§1.7 compaction — append a snapshot covering state at
