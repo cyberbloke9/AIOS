@@ -208,9 +208,18 @@ def _resolve_source(source, format):
 
 def _parse_text(text: str, fmt: str):
     if fmt == "json":
-        return json.loads(text)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            raise ManifestError(f"manifest is not valid JSON: {e}") from e
     if fmt == "yaml":
-        return _parse_yaml(text)
+        try:
+            return _parse_yaml(text)
+        except ImportError:
+            raise ManifestError(
+                "YAML manifest requested but PyYAML is not installed; "
+                "install with `pip install aios[enterprise]`"
+            )
     # auto: try JSON, then YAML
     try:
         return json.loads(text)
@@ -222,6 +231,8 @@ def _parse_text(text: str, fmt: str):
                 "manifest is not valid JSON and PyYAML is not installed; "
                 "install with `pip install aios[enterprise]` or supply JSON"
             )
+        except Exception as e:
+            raise ManifestError(f"manifest parse failed: {e}") from e
 
 
 def _parse_yaml(text: str):

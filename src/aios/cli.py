@@ -29,6 +29,7 @@ from aios.verification.conservation_scan import (
     Invariant, RunState, VerificationSlice, _chain_hash,
     any_breach, conservation_scan,
 )
+from aios.workflow import WorkflowRunner, parse_manifest, ManifestError
 
 DEFAULT_HOME = "aios_home"
 
@@ -270,6 +271,41 @@ def cmd_check_profile(args: argparse.Namespace) -> int:
     return 0 if result.passed else 5
 
 
+def cmd_run(args: argparse.Namespace) -> int:
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+
+    try:
+        manifest = parse_manifest(Path(args.manifest))
+    except (ManifestError, OSError) as e:
+        sys.stderr.write(f"error: manifest parse failed: {e}\n")
+        return 2
+
+    if args.run_json:
+        try:
+            run = _load_runstate_from_json(Path(args.run_json))
+        except (OSError, KeyError, ValueError) as e:
+            sys.stderr.write(f"error: run JSON parse failed: {e}\n")
+            return 2
+    else:
+        run = _demo_runstate()
+
+    log = EventLog(home / "events")
+    try:
+        result = WorkflowRunner().run(manifest, run, log)
+    finally:
+        log.close()
+
+    print(result.summary())
+
+    if result.outcome == "promoted":
+        return 0
+    if result.outcome == "aborted":
+        return 4  # Q1-Q3 soundness breach (same code as `aios scan` breach)
+    return 6      # rejected (non-soundness gate failure / stub)
+
+
 def cmd_version(args: argparse.Namespace) -> int:
     print(f"aios {__version__}")
     for k, v in sorted(__spec_versions__.items()):
@@ -328,6 +364,13 @@ def build_parser() -> argparse.ArgumentParser:
                         help="run profile enforcement checks (Runtime §10.6)")
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_check_profile)
+
+    sp = sub.add_parser("run",
+                        help="execute a workflow manifest against a RunState")
+    sp.add_argument("manifest", help="path to workflow manifest (JSON or YAML)")
+    sp.add_argument("--run-json", help="path to a JSON RunState (defaults to demo)")
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_run)
 
     sp = sub.add_parser("version", help="print version info")
     sp.set_defaults(func=cmd_version)
