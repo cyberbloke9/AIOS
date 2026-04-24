@@ -28,6 +28,7 @@ sandboxing — that is M5's deployment story.
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -36,6 +37,60 @@ from pathlib import Path
 from typing import Iterable
 
 from aios.verification.conservation_scan import RunState
+
+# Env variables that are always scrubbed under sandbox=True. Matches
+# common secret-naming patterns across ecosystems (AWS, GCP, Azure,
+# GitHub, Slack, etc.). The list is checked case-insensitively as a
+# SUFFIX match so XYZ_API_KEY, MY_SECRET, PRIVATE_KEY etc. all go.
+_SECRET_SUFFIXES = (
+    "_TOKEN", "_KEY", "_SECRET", "_PASSWORD", "_PASSWD",
+    "_API_KEY", "_ACCESS_KEY", "_PRIVATE_KEY", "_CREDENTIAL",
+)
+_SECRET_EXACT = (
+    "DATABASE_URL", "AWS_SESSION_TOKEN", "AWS_SECRET_ACCESS_KEY",
+    "GITHUB_TOKEN", "SLACK_TOKEN", "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+)
+
+
+def scrub_env(env: dict[str, str]) -> dict[str, str]:
+    """Remove secret-looking variables from an env dict.
+
+    Not foolproof (malicious test code can still exfiltrate any env
+    variable it sees) but removes the obvious low-hanging secrets.
+    Callers that need stricter isolation should run pytest under
+    a container or separate OS user.
+    """
+    kept: dict[str, str] = {}
+    for k, v in env.items():
+        ku = k.upper()
+        if ku in _SECRET_EXACT:
+            continue
+        if any(ku.endswith(sfx) for sfx in _SECRET_SUFFIXES):
+            continue
+        kept[k] = v
+    return kept
+
+
+def _build_preexec_fn(memory_limit_mb: int | None):
+    """POSIX resource.setrlimit preexec_fn — None on Windows."""
+    if os.name == "nt" or memory_limit_mb is None:
+        return None
+    try:
+        import resource
+    except ImportError:
+        return None
+
+    bytes_limit = int(memory_limit_mb * 1024 * 1024)
+
+    def preexec():
+        # RLIMIT_AS = total address space. Tighter than RSS but portable.
+        try:
+            resource.setrlimit(resource.RLIMIT_AS,
+                               (bytes_limit, bytes_limit))
+        except (ValueError, OSError):
+            pass
+    return preexec
 
 # Pytest exit codes (see pytest docs):
 #   0  all tests passed
@@ -58,8 +113,21 @@ def p_acceptance_tests(
     pytest_args: Iterable[str] | None = None,
     timeout_seconds: float = 600.0,
     python_executable: str | None = None,
+    sandbox: bool = False,
+    memory_limit_mb: int | None = None,
 ) -> dict:
-    """Run pytest on suite_path and return the §1.2 T2 verdict dict."""
+    """Run pytest on suite_path and return the §1.2 T2 verdict dict.
+
+    `sandbox=True` enables env scrubbing (strips *_TOKEN / *_KEY /
+    *_SECRET / *_PASSWORD vars + a small allow-list of known secret
+    names like DATABASE_URL, AWS_SESSION_TOKEN). POSIX further gets
+    resource.setrlimit(RLIMIT_AS) applied via preexec_fn when
+    memory_limit_mb is supplied. Windows ignores memory_limit_mb
+    (native sandboxing via Job Objects is deferred) but still scrubs
+    env. Callers wanting stricter isolation should run pytest under
+    a container or separate OS user — this sandbox raises the bar,
+    it is not a full containment boundary.
+    """
     if suite_path is None:
         return {
             "status": "preserved",
@@ -71,14 +139,20 @@ def p_acceptance_tests(
 
     cmd = [python, "-m", "pytest", str(suite_path), *args]
 
+    run_kwargs: dict = {
+        "capture_output": True,
+        "text": True,
+        "timeout": timeout_seconds,
+    }
+    if sandbox:
+        run_kwargs["env"] = scrub_env(dict(os.environ))
+        preexec = _build_preexec_fn(memory_limit_mb)
+        if preexec is not None:
+            run_kwargs["preexec_fn"] = preexec
+
     started = time.monotonic()
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
+        result = subprocess.run(cmd, **run_kwargs)
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - started
         return {
@@ -126,6 +200,7 @@ def p_acceptance_tests(
         "status": status,
         "exit_code": result.returncode,
         "duration_seconds": round(elapsed, 3),
+        "sandbox": sandbox,
         "passed": counts.get("passed", 0),
         "failed": counts.get("failed", 0),
         "errors": counts.get("errors", 0) + counts.get("error", 0),
