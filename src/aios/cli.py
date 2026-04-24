@@ -29,6 +29,7 @@ from aios.verification.conservation_scan import (
     Invariant, RunState, VerificationSlice, _chain_hash,
     any_breach, conservation_scan,
 )
+from aios.project import adopt as _adopt_project, install_post_commit_hook
 from aios.workflow import WorkflowRunner, parse_manifest, ManifestError
 
 DEFAULT_HOME = "aios_home"
@@ -271,6 +272,36 @@ def cmd_check_profile(args: argparse.Namespace) -> int:
     return 0 if result.passed else 5
 
 
+def cmd_adopt(args: argparse.Namespace) -> int:
+    try:
+        result = _adopt_project(args.repo, profile=args.profile, force=args.force)
+    except (FileExistsError, NotADirectoryError, ValueError) as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 1 if isinstance(e, FileExistsError) else 2
+
+    print(f"adopted AIOS into repo {result.repo}")
+    print(f"  profile:         {result.init.profile}")
+    print(f"  aios home:       {result.init.root}")
+    print(f"  invariants.yaml: {'created' if result.invariants_template_written else 'existing'}")
+    print(f"  .gitignore:      {'updated' if result.gitignore_updated else 'already had runtime entries'}")
+    print("")
+    print("Next: edit .aios/invariants.yaml, then run `aios git-init` to install")
+    print("      a post-commit hook that logs every commit into the event log.")
+    return 0
+
+
+def cmd_git_init(args: argparse.Namespace) -> int:
+    try:
+        hook_path = install_post_commit_hook(args.repo)
+    except FileNotFoundError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
+
+    print(f"installed post-commit hook at {hook_path}")
+    print("Commits from now on will append a commit.landed frame to .aios/events/.")
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     home = _home_from_args(args)
     if not _require_initialized(home):
@@ -364,6 +395,21 @@ def build_parser() -> argparse.ArgumentParser:
                         help="run profile enforcement checks (Runtime §10.6)")
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_check_profile)
+
+    sp = sub.add_parser("adopt",
+                        help="scaffold AIOS into an existing repo (.aios/ + .gitignore)")
+    sp.add_argument("repo", help="repository root to adopt")
+    sp.add_argument("--profile", default="P-Local",
+                    choices=["P-Local", "P-Enterprise", "P-Airgap", "P-HighAssurance"])
+    sp.add_argument("--force", action="store_true",
+                    help="overwrite existing .aios/ config")
+    sp.set_defaults(func=cmd_adopt)
+
+    sp = sub.add_parser("git-init",
+                        help="install a post-commit hook that logs commits")
+    sp.add_argument("repo", nargs="?", default=".",
+                    help="repository root (default: current directory)")
+    sp.set_defaults(func=cmd_git_init)
 
     sp = sub.add_parser("run",
                         help="execute a workflow manifest against a RunState")
