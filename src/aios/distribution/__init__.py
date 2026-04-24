@@ -67,6 +67,11 @@ from aios.distribution.tuf_chain import (
     TufStaleError,
     verify_tuf_chain,
 )
+from aios.distribution.tuf_rotation import (
+    RotationReport,
+    TufRotationError,
+    verify_root_rotation,
+)
 from aios.distribution.sbom_cyclonedx import (
     CycloneDXDocument,
     generate_cyclonedx,
