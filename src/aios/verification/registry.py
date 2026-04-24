@@ -25,6 +25,7 @@ from aios.verification.conservation_scan import (
     scan_q2_state_traceability,
     scan_q3_decision_reversibility,
 )
+from aios.verification.pi_sentinel import p_pi_sentinel
 from aios.verification.schema_check import p_schema_valid
 
 AuthorityId = Literal["A1", "A2", "A3", "A4", "A5"]
@@ -208,8 +209,11 @@ def _core_records() -> list[PredicateRecord]:
             soundness_class="other",
             implementation=p_schema_valid,
         ),
-        # §1.2: prompt-injection sentinel — deferred to v2 (requires a
-        # calibrated classifier + adversarial corpus).
+        # §1.2: prompt-injection sentinel — pattern-based deterministic
+        # detector (sprint 45). Takes optional `text` kwarg via registry
+        # evaluate; classifies Z2 content against known injection shapes
+        # (role_escape, system_prompt_leak, identity_hijack, tool_hijack,
+        # delimiter_smuggle).
         PredicateRecord(
             id="P_PI_sentinel",
             version="1.0.0",
@@ -222,7 +226,7 @@ def _core_records() -> list[PredicateRecord]:
             reference_vectors="reference_vectors/P_PI_sentinel.json",
             failure_level="hazardous",
             soundness_class="other",
-            implementation=None,
+            implementation=p_pi_sentinel,
         ),
         # §1.2: named acceptance-test suite — orchestrator-level, not a
         # per-run predicate. Registered so workflows can reference it.

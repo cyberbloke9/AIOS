@@ -101,8 +101,10 @@ def test_evaluate_o5_via_registry():
 
 
 def test_evaluate_stub_predicate_raises_not_implemented():
+    # P_PI_sentinel became real in sprint 45; P_acceptance_tests remains
+    # stubbed so this "no silent pass on stubs" invariant stays testable.
     with pytest.raises(NotImplementedPredicateError):
-        default_registry.evaluate("P_PI_sentinel", _sample_run())
+        default_registry.evaluate("P_acceptance_tests", _sample_run())
 
 
 def test_evaluate_schema_valid_no_args_returns_preserved_with_note():

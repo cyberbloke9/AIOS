@@ -205,8 +205,10 @@ def test_workflow_referencing_unregistered_predicate_refused():
 
 
 def test_stub_predicate_refuses_silent_pass():
-    """P_PI_sentinel is registered but not implemented. A workflow that
-    calls evaluate() on it must get a loud refusal, not a silent 'ok'."""
+    """P_acceptance_tests is registered but not yet implemented. A workflow
+    that calls evaluate() on it must get a loud refusal, not a silent 'ok'.
+    (P_PI_sentinel was promoted from stub to real in sprint 45; the
+    still-stub predicate is P_acceptance_tests.)"""
     run = RunState(
         run_id="t",
         invariants_before=frozenset(),
@@ -220,7 +222,7 @@ def test_stub_predicate_refuses_silent_pass():
         impact="local",
     )
     with pytest.raises(NotImplementedPredicateError):
-        default_registry.evaluate("P_PI_sentinel", run)
+        default_registry.evaluate("P_acceptance_tests", run)
 
 
 # Q1 breach must be detected and raised through the ledger -----------------

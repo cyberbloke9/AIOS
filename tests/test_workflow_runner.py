@@ -148,14 +148,14 @@ def test_promoted_run_emits_promoted_frame():
 
 def test_stub_predicate_causes_rejection_not_silent_pass():
     """A workflow that explicitly includes a still-stub predicate
-    (P_PI_sentinel) must be rejected — stubs cannot silently pass.
-    P_schema_valid is no longer a stub as of sprint 25, so we reach
-    for P_PI_sentinel to keep the semantic test alive."""
+    (P_acceptance_tests) must be rejected — stubs cannot silently pass.
+    P_schema_valid was promoted in sprint 25 and P_PI_sentinel in
+    sprint 45; P_acceptance_tests is the remaining stub."""
     manifest = parse_manifest(json.dumps({
         "id": "stub-demo",
         "version": "1.0",
         "impact": "local",
-        "required_gates": ["P_PI_sentinel"],
+        "required_gates": ["P_acceptance_tests"],
     }))
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -168,7 +168,7 @@ def test_stub_predicate_causes_rejection_not_silent_pass():
         stub_results = [g for g in result.gate_results
                         if g.status == "not_implemented"]
         assert stub_results
-        assert any(g.predicate_id == "P_PI_sentinel" for g in stub_results)
+        assert any(g.predicate_id == "P_acceptance_tests" for g in stub_results)
 
 
 def test_subsystem_runs_m4_and_o5():
