@@ -4,6 +4,10 @@ See docs/spec/AIOS_Distribution_Spec.md.
 """
 from __future__ import annotations
 
+from aios.distribution.sbom_cyclonedx import (
+    CycloneDXDocument,
+    generate_cyclonedx,
+)
 from aios.distribution.sbom_spdx import (
     SPDXDocument,
     SPDXPackage,
@@ -11,7 +15,9 @@ from aios.distribution.sbom_spdx import (
 )
 
 __all__ = [
+    "CycloneDXDocument",
     "SPDXDocument",
     "SPDXPackage",
+    "generate_cyclonedx",
     "generate_spdx",
 ]

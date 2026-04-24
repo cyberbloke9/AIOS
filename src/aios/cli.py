@@ -44,6 +44,7 @@ from aios.verification.conservation_scan import (
     any_breach, conservation_scan,
 )
 from aios.verification.corpus import CorpusQualityError
+from aios.distribution import generate_cyclonedx, generate_spdx
 from aios.project import (
     adopt as _adopt_project,
     install_post_commit_hook,
@@ -346,6 +347,25 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     print(f"  corpus size:  {record.corpus_size}")
     print(f"  adversarial:  {record.corpus_adversarial_share:.3f}")
     print(f"  record:       {path}")
+    return 0
+
+
+def cmd_sbom(args: argparse.Namespace) -> int:
+    """Distribution §5.3 — emit SBOM in SPDX 2.3 or CycloneDX 1.5."""
+    if args.format == "spdx":
+        doc = generate_spdx(root_name=args.root, root_version=args.root_version)
+        data = doc.to_json()
+    else:
+        doc = generate_cyclonedx(root_name=args.root,
+                                  root_version=args.root_version)
+        data = doc.to_json()
+
+    text = json.dumps(data, indent=2, sort_keys=True)
+    if args.output:
+        Path(args.output).write_text(text + "\n", encoding="utf-8")
+        print(f"wrote {args.format} SBOM to {args.output}")
+    else:
+        print(text)
     return 0
 
 
@@ -708,6 +728,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("run_id", help="run_id to replay")
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_replay_incident)
+
+    sp = sub.add_parser("sbom",
+                        help="emit SBOM for current environment (Distribution §5.3)")
+    sp.add_argument("--format", choices=["spdx", "cyclonedx"], default="spdx")
+    sp.add_argument("--root", default="aios",
+                    help="root package the SBOM describes (default: aios)")
+    sp.add_argument("--root-version", default=None,
+                    help="version for the root package (default: installed)")
+    sp.add_argument("--output", default=None,
+                    help="write to PATH instead of stdout")
+    sp.set_defaults(func=cmd_sbom)
 
     sp = sub.add_parser("compact",
                         help="§1.7 — snapshot + mark segments compacted through seq")
