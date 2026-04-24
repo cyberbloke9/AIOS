@@ -30,6 +30,7 @@ from aios.skills.base import (
 
 # Baseline skills self-register on import.
 from aios.skills import adr_check as _adr_check  # noqa: F401,E402
+from aios.skills import precedent_match as _precedent_match  # noqa: F401,E402
 
 __all__ = [
     "NotImplementedSkillError",
