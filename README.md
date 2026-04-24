@@ -35,7 +35,28 @@ pip install -e .                    # editable, from a clone
 pip install -e ".[enterprise,dev]"  # editable + extras
 ```
 
-## Quickstart
+## Quickstart — integrate into your repo
+
+```bash
+cd my-project
+aios adopt .                               # creates .aios/, updates .gitignore
+aios git-init                              # installs post-commit hook
+# Edit .aios/invariants.yaml to declare your real invariants
+
+aios check                                 # run the governance sweep
+
+# After a commit, to verify soundness across the change:
+aios check --before HEAD~1 --after HEAD
+```
+
+Exit codes: 0 promoted, 2 bad input, 4 Q1/Q2/Q3 breach, 6 other rejection.
+
+See **[docs/integration.md](docs/integration.md)** for the full
+`.aios/` layout, `invariants.yaml` schema, ADR format, and CI examples.
+See **[examples/demo.md](examples/demo.md)** for a walkthrough that
+catches a silent invariant removal end-to-end.
+
+## Low-level commands (for tooling / tests)
 
 ```
 aios --help

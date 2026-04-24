@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented here.
 
+## [0.3.0] — unreleased (M3: make it usable)
+
+The first build a real developer can point at their repo and have
+governance. Closes the integration gap between "spec demonstrator" and
+"works on my project."
+
+### Added
+
+- **Project-state readers** (`aios.project.readers`) —
+  `read_invariants()` parses `.aios/invariants.yaml|.json` into
+  `frozenset[Invariant]`. `read_adrs()` walks the ADR directory
+  (first found of `adrs/`, `docs/adr/`, `doc/adr/`, `docs/adrs/`) and
+  parses YAML front matter into `tuple[ADREvent]`. Stdlib-only
+  mini-YAML fallback when PyYAML is absent.
+- **RunState adapter** (`aios.project.runstate_from_project`) —
+  builds a RunState from a real repo, optionally diffing two git refs
+  via `git show` + temp reconstruction. The "before" invariant set is
+  recovered from history so Q1 silent-removal detection works across
+  commits.
+- **Real P_schema_valid** backed by `jsonschema>=4.20` (Draft 2020-12).
+  Added as a core dependency. Retires the sprint-4 stub; returns
+  structured errors with absolute_path for downstream tooling.
+- **Skill framework** (`aios.skills`) — `SkillContract` frozen
+  dataclass + `SkillRegistry` parallel to the gate Registry. Invoke
+  path validates inputs and outputs against JSON Schema. Stubs raise
+  `NotImplementedSkillError` — no silent pass.
+- **SK-ADR-CHECK** — validates ADR lifecycle (Kernel §2.4) + reference
+  integrity + Constitution §1.1 `removes` requires Accepted status.
+  Registered on import.
+- **SK-PRECEDENT-MATCH** — stdlib TF-IDF over ADR bodies. Ranks prior
+  ADRs against a query string so authors see related precedents.
+- **`aios adopt <repo>`** — scaffolds `.aios/` into an existing repo,
+  writes starter `invariants.yaml`, adds runtime state to `.gitignore`.
+- **`aios git-init`** — installs `.git/hooks/post-commit` that appends
+  `commit.landed` frames. Idempotent + preserves user hook content.
+- **`aios check`** — the "it works on my repo" command. Builds a
+  RunState from the project, runs SK-ADR-CHECK + Q1/Q2/Q3 gates,
+  emits all the usual workflow frames.
+- **Demo project** — `examples/demo-project/` + `examples/demo.md`
+  walkthrough showing the silent-invariant-removal scenario
+  end-to-end.
+- **Docs** — `docs/integration.md` with the full `.aios/` layout,
+  schemas, and CI recipe. README reshuffled to foreground the
+  adopt-then-check flow.
+
+### Test count
+
+279/279 pass with the enterprise extra installed.
+
+### Still deferred (see docs/coverage.md)
+
+- TUF client + bootstrap anchor verification (§6)
+- Merkle batch overlay (§1.5) — P-HighAssurance only
+- Snapshots + compaction (§1.7, §1.8)
+- Credentialing Phase 0 and Phase 1 (Verification §3)
+- Calibration protocol with corpus-quality rules (Verification §2)
+- Audit protocol + G1-G7 taxonomy (Verification §4)
+- SBOM production + Sigstore/Rekor signed releases (Distribution §5)
+- DPoP proof-of-possession (§2.8)
+- SK-THREAT-MODEL / SK-DEBATE-N3 skills
+
 ## [0.2.0] — unreleased (Option 1 + 2 + 3: P-Enterprise partial + workflow orchestrator + CI/release)
 
 ### Added

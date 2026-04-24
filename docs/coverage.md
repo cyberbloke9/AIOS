@@ -1,6 +1,8 @@
 # Coverage matrix
 
-> What v0.1.0 implements and what it deliberately does not.
+> What the current build implements and what it deliberately does not.
+> Living document updated per release. Current: **v0.3.0** (M3 —
+> "make it usable").
 > The authoritative source is Runtime Protocol §8.1 (normative covered
 > vs. not-covered for `event_log.py`). This document extends §8.1 to
 > the whole package.
@@ -79,10 +81,32 @@ Mirrors §8.1 of the spec.
 |---|---|
 | §1 Gate registry + PredicateRecord schema        | ✅ |
 | §1.2 Core predicates Q1/Q2/Q3/M4/O5              | ✅ |
-| §1.2 P_schema_valid / P_PI_sentinel / P_acceptance_tests | 🟡 stubs refuse silent pass |
+| §1.2 P_schema_valid (T3 jsonschema-backed)       | ✅ (v0.3.0) |
+| §1.2 P_PI_sentinel / P_acceptance_tests          | 🟡 stubs refuse silent pass |
 | §2 Calibration protocol (anti-theater)           | ❌ P-Local explicitly declares no-calibration |
 | §3 Credential protocol (Phase 0 / Phase 1)       | ❌ |
 | §4 Audit protocol + G1-G7 taxonomy               | ❌ |
+
+## Skills (Kernel §1.1 Z1 + Distribution §1.1 baseline)
+
+| Skill | Status |
+|---|---|
+| SK-ADR-CHECK (ADR lifecycle + reference integrity) | ✅ (v0.3.0) |
+| SK-PRECEDENT-MATCH (TF-IDF cosine over ADRs)       | ✅ (v0.3.0) |
+| SK-THREAT-MODEL                                     | ❌ |
+| SK-DEBATE-N3 (multi-skill concurrence)              | ❌ |
+
+## Project integration (v0.3.0)
+
+| Feature | Status |
+|---|---|
+| `aios adopt <repo>` scaffolds .aios/                       | ✅ |
+| `aios git-init` installs post-commit hook                  | ✅ |
+| `aios check` one-shot RunState-from-repo scan              | ✅ |
+| `.aios/invariants.yaml` declarative schema                 | ✅ |
+| ADR front-matter reader (adrs/ or docs/adr/)               | ✅ |
+| RunState adapter with git before/after diff                | ✅ |
+| GitHub PR check composite action                           | ❌ M4 |
 
 ## Distribution Spec (v1.0)
 
@@ -103,14 +127,35 @@ Mirrors §8.1 of the spec.
 
 ```
 $ pytest
-................... 80 passed
+...................
+279 passed
 ```
 
-Breakdown:
-- tests/test_event_log.py        12 (§1, §3, §5)
-- tests/test_conservation_scan.py 10 (Ver §1.2 core + compat)
-- tests/test_registry.py          14 (Ver §1.1, §1.2, §1.5)
-- tests/test_init.py               8 (Dist §4.1)
-- tests/test_profile.py           10 (Runtime §10.6)
-- tests/test_cli.py               15 (UX + exit codes)
-- tests/test_adversarial.py       11 (security boundary)
+Breakdown (v0.3.0):
+- tests/test_event_log.py              12 (§1, §3, §5)
+- tests/test_event_log_lock.py          6 (§5.1 writer lock)
+- tests/test_event_log_signing.py       8 (Ed25519 + §1.2 sig)
+- tests/test_conservation_scan.py      10 (Ver §1.2 core + compat)
+- tests/test_registry.py               14 (Ver §1.1, §1.2, §1.5)
+- tests/test_schema_check.py           12 (real P_schema_valid, §1.2 T3)
+- tests/test_skills_base.py            14 (SkillContract + SkillRegistry)
+- tests/test_skill_adr_check.py        12 (SK-ADR-CHECK)
+- tests/test_skill_precedent_match.py  10 (SK-PRECEDENT-MATCH)
+- tests/test_init.py                    8 (Dist §4.1)
+- tests/test_project_readers.py        19 (invariants.yaml + ADR readers)
+- tests/test_project_runstate.py       10 (RunState adapter + git diff)
+- tests/test_project_adopt.py          13 (adopt + post-commit hook)
+- tests/test_profile.py                10 (Runtime §10.6)
+- tests/test_profile_v02.py             8 (P-Enterprise partial)
+- tests/test_filelock.py               10 (§5.1 POSIX + Windows)
+- tests/test_workflow_manifest.py      15 (Kernel §1.2 defaults + parse)
+- tests/test_workflow_runner.py         8 (Kernel §2.2 lifecycle)
+- tests/test_cli.py                    15 (core UX + exit codes)
+- tests/test_cli_run.py                 6 (`aios run`)
+- tests/test_cli_adopt.py               7 (`aios adopt` / `git-init`)
+- tests/test_cli_check.py               7 (`aios check`)
+- tests/test_demo_project.py            4 (examples/demo-project end-to-end)
+- tests/test_adversarial.py            11 (security boundary — substrate)
+- tests/test_adversarial_v02.py         8 (security boundary — Ed25519 + lock)
+- tests/test_enterprise_stubs.py        9 (JCS + Signer/Verifier protocol)
+- tests/test_ed25519.py                12 (concrete Ed25519 round-trip)
