@@ -30,6 +30,10 @@ from aios.verification.calibration_record import (
     load_corpus_from_json,
     save_record,
 )
+from aios.verification.calibration_status import (
+    check_calibration_status,
+    record_calibration_attempt,
+)
 from aios.verification.conservation_scan import (
     ADREvent, ContextLoad, Decision, EventLogRange, GenerationSlice,
     Invariant, RunState, VerificationSlice, _chain_hash,
@@ -320,19 +324,46 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
             method=args.method, impact=args.impact,
         )
     except CorpusQualityError as e:
+        record_calibration_attempt(home, args.skill_id, success=False,
+                                   detail=f"corpus [{e.rule}]: {e.detail}")
         sys.stderr.write(f"corpus rejected [{e.rule}]: {e.detail}\n")
         return 7
     except CalibrationQualityError as e:
+        record_calibration_attempt(home, args.skill_id, success=False,
+                                   detail=str(e))
         sys.stderr.write(f"calibration refused: {e}\n")
         return 7
 
     path = save_record(home, record)
+    record_calibration_attempt(home, args.skill_id, success=True)
     print(f"calibrated {args.skill_id} with {args.method}")
     print(f"  brier:        {record.metrics_brier:.4f}  (<= {record.thresholds_brier_max})")
     print(f"  ece:          {record.metrics_ece:.4f}  (<= {record.thresholds_ece_max})")
     print(f"  corpus size:  {record.corpus_size}")
     print(f"  adversarial:  {record.corpus_adversarial_share:.3f}")
     print(f"  record:       {path}")
+    return 0
+
+
+def cmd_calibration_status(args: argparse.Namespace) -> int:
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+
+    report = check_calibration_status(home, args.skill_id)
+    print(f"calibration status for {report.skill_id}: {report.state.upper()}")
+    print(f"  reason: {report.reason}")
+    if report.last_fit_iso:
+        print(f"  last_fit: {report.last_fit_iso}")
+        print(f"  age_days: {report.age_days:.1f}")
+        print(f"  window_days: {report.window_days}")
+    if report.recent_failure_count:
+        print(f"  recent_failures: {report.recent_failure_count} (30d)")
+
+    if report.state in ("drift", "not_calibrated"):
+        return 8
+    if report.state == "quarantined":
+        return 9
     return 0
 
 
@@ -553,6 +584,12 @@ def build_parser() -> argparse.ArgumentParser:
                     choices=["local", "subsystem", "system_wide"])
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_calibrate)
+
+    sp = sub.add_parser("calibration-status",
+                        help="check whether a skill's calibration is current / drift / quarantined")
+    sp.add_argument("skill_id")
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_calibration_status)
 
     sp = sub.add_parser("check",
                         help="one-shot project scan: Q1-Q3 + SK-ADR-CHECK")
