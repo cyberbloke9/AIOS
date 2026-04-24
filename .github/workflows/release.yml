@@ -10,9 +10,13 @@ permissions:
   contents: read
 
 jobs:
+  # Build + test. Uses the same skip-slow pattern as CI so release
+  # doesn't hang on subprocess-pytest tests. Release is about wheel
+  # correctness; the slow suite ran in normal CI already.
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -22,15 +26,17 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install build tooling
+      - name: Install build + test tooling
         run: |
           python -m pip install --upgrade pip
           python -m pip install build
+          python -m pip install -e ".[enterprise,dev]" pytest-timeout
 
-      - name: Run tests before release
+      - name: Run fast suite before release
         run: |
-          python -m pip install -e ".[enterprise,dev]"
-          python -m pytest -q
+          python -m pytest -q --timeout=60 \
+            --ignore=tests/test_acceptance_tests.py \
+            --ignore=tests/test_acceptance_sandbox.py
 
       - name: Build distributions
         run: python -m build

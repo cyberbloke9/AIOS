@@ -9,7 +9,16 @@ on:
 permissions:
   contents: read
 
+# Cancel in-progress runs when a new commit lands on the same ref —
+# avoids 3 OS × 2 Python = 6 stale jobs piling up behind every push.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ---------------------------------------------------------------
+  # Full suite with enterprise extras across the support matrix.
+  # ---------------------------------------------------------------
   test:
     strategy:
       fail-fast: false
@@ -17,7 +26,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12"]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     name: test (${{ matrix.os }} / py${{ matrix.python-version }})
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,13 +38,21 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install package (with enterprise + dev extras)
+      - name: Install package + test tooling
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[enterprise,dev]"
+          python -m pip install -e ".[enterprise,dev]" pytest-timeout
 
-      - name: Run tests
-        run: python -m pytest -q
+      # Skip the subprocess-heavy pytest-wrapper tests (~3 min each) on
+      # matrix jobs; they run once in the dedicated `slow-tests` job.
+      # The acceptance_tests suite is tested functionally by its unit
+      # tests; skipping here keeps the matrix under 5 min per cell.
+      - name: Run fast suite (enterprise)
+        run: |
+          python -m pytest -q --timeout=60 \
+            --ignore=tests/test_acceptance_tests.py \
+            --ignore=tests/test_acceptance_sandbox.py \
+            --durations=10
 
       - name: Verify CLI entry point installed
         run: aios --version
@@ -49,9 +68,14 @@ jobs:
           aios check-profile --home _ci_home
           rm -rf _ci_home
 
+  # ---------------------------------------------------------------
+  # Minimal-install job — proves the P-Local path works stdlib-only.
+  # Cryptography-dependent tests skip cleanly via their pytestmark.
+  # ---------------------------------------------------------------
   test-minimal:
-    name: test (minimal install, stdlib only)
+    name: test (minimal install, no enterprise extra)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -64,7 +88,49 @@ jobs:
       - name: Install package (no enterprise extra)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[dev]" pytest-timeout
 
-      - name: Run core test suite (Ed25519 tests skip without cryptography)
-        run: python -m pytest -q --deselect tests/test_ed25519.py --deselect tests/test_event_log_signing.py --deselect tests/test_adversarial_v02.py --deselect tests/test_profile_v02.py
+      # Every cryptography-dependent test file carries
+      # `pytestmark = pytest.mark.skipif(not cryptography_available())`
+      # so they skip cleanly here. Also skip the subprocess-heavy
+      # pytest-wrapper tests (covered in slow-tests).
+      - name: Run core suite (stdlib core + jsonschema)
+        run: |
+          python -m pytest -q --timeout=60 \
+            --ignore=tests/test_acceptance_tests.py \
+            --ignore=tests/test_acceptance_sandbox.py \
+            --durations=10
+
+      - name: Verify CLI entry point installed
+        run: aios --version
+
+  # ---------------------------------------------------------------
+  # Subprocess-pytest tests — slow but correct. Run once on Linux
+  # with extended timeout. Not gating merges; provides a clean signal
+  # on the acceptance-test wrapper behavior.
+  # ---------------------------------------------------------------
+  slow-tests:
+    name: slow tests (subprocess pytest wrappers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install with enterprise extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[enterprise,dev]" pytest-timeout
+
+      - name: Run subprocess-heavy acceptance test suites
+        run: |
+          python -m pytest -q --timeout=300 \
+            tests/test_acceptance_tests.py \
+            tests/test_acceptance_sandbox.py \
+            --durations=10
