@@ -62,6 +62,10 @@ class CorpusExample:
     provenance: str             # "human-<name>" | "oracle-<id>" — non-empty
     is_adversarial: bool = False
     date_iso: str | None = None  # ISO 8601 UTC ("2026-04-01T00:00:00Z")
+    # Predicted probability from the skill being calibrated. Optional so
+    # that validate_corpus() can run on a fresh corpus before any skill
+    # has produced predictions. `calibrate()` requires it on every example.
+    predicted_prob: float | None = None
 
 
 @dc.dataclass(frozen=True)

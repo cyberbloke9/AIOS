@@ -24,11 +24,18 @@ from aios import __spec_versions__, __version__
 from aios.runtime.event_log import EventLog
 from aios.runtime.init import init_aios_home, read_config, is_initialized
 from aios.runtime.profile import check_profile
+from aios.verification.calibration_record import (
+    CalibrationQualityError,
+    calibrate as _calibrate,
+    load_corpus_from_json,
+    save_record,
+)
 from aios.verification.conservation_scan import (
     ADREvent, ContextLoad, Decision, EventLogRange, GenerationSlice,
     Invariant, RunState, VerificationSlice, _chain_hash,
     any_breach, conservation_scan,
 )
+from aios.verification.corpus import CorpusQualityError
 from aios.project import (
     adopt as _adopt_project,
     install_post_commit_hook,
@@ -295,6 +302,40 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_calibrate(args: argparse.Namespace) -> int:
+    """Fit a calibrator for a skill and persist the §2.4 record."""
+    home = _home_from_args(args)
+    if not _require_initialized(home):
+        return 2
+
+    try:
+        corpus = load_corpus_from_json(args.corpus)
+    except (OSError, KeyError, ValueError) as e:
+        sys.stderr.write(f"error: could not load corpus: {e}\n")
+        return 2
+
+    try:
+        record = _calibrate(
+            args.skill_id, corpus,
+            method=args.method, impact=args.impact,
+        )
+    except CorpusQualityError as e:
+        sys.stderr.write(f"corpus rejected [{e.rule}]: {e.detail}\n")
+        return 7
+    except CalibrationQualityError as e:
+        sys.stderr.write(f"calibration refused: {e}\n")
+        return 7
+
+    path = save_record(home, record)
+    print(f"calibrated {args.skill_id} with {args.method}")
+    print(f"  brier:        {record.metrics_brier:.4f}  (<= {record.thresholds_brier_max})")
+    print(f"  ece:          {record.metrics_ece:.4f}  (<= {record.thresholds_ece_max})")
+    print(f"  corpus size:  {record.corpus_size}")
+    print(f"  adversarial:  {record.corpus_adversarial_share:.3f}")
+    print(f"  record:       {path}")
+    return 0
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """One-shot project scan: conservation + SK-ADR-CHECK + gate sweep."""
     repo = Path(args.repo).resolve()
@@ -500,6 +541,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("repo", nargs="?", default=".",
                     help="repository root (default: current directory)")
     sp.set_defaults(func=cmd_git_init)
+
+    sp = sub.add_parser("calibrate",
+                        help="fit a calibrator for a skill against a corpus")
+    sp.add_argument("skill_id", help="skill to calibrate (e.g. SK-ADR-CHECK)")
+    sp.add_argument("--corpus", required=True,
+                    help="path to corpus JSON file")
+    sp.add_argument("--method", default="temperature_scaling",
+                    choices=["temperature_scaling", "platt_scaling"])
+    sp.add_argument("--impact", default="local",
+                    choices=["local", "subsystem", "system_wide"])
+    sp.add_argument("--home", help="AIOS home directory")
+    sp.set_defaults(func=cmd_calibrate)
 
     sp = sub.add_parser("check",
                         help="one-shot project scan: Q1-Q3 + SK-ADR-CHECK")
