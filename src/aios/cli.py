@@ -29,7 +29,12 @@ from aios.verification.conservation_scan import (
     Invariant, RunState, VerificationSlice, _chain_hash,
     any_breach, conservation_scan,
 )
-from aios.project import adopt as _adopt_project, install_post_commit_hook
+from aios.project import (
+    adopt as _adopt_project,
+    install_post_commit_hook,
+    runstate_from_project,
+)
+from aios.skills import default_skill_registry
 from aios.workflow import WorkflowRunner, parse_manifest, ManifestError
 
 DEFAULT_HOME = "aios_home"
@@ -290,6 +295,91 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    """One-shot project scan: conservation + SK-ADR-CHECK + gate sweep."""
+    repo = Path(args.repo).resolve()
+    home = repo / ".aios"
+    if not home.is_dir():
+        sys.stderr.write(
+            f"error: {repo} is not AIOS-adopted (no .aios/ directory). "
+            f"Run `aios adopt {repo}` first.\n"
+        )
+        return 2
+
+    # 1. Build RunState from project state (optionally diffing against before_ref).
+    try:
+        runstate = runstate_from_project(
+            repo,
+            before_ref=args.before,
+            after_ref=args.after,
+            impact=args.impact,
+        )
+    except Exception as e:
+        sys.stderr.write(f"error: could not read project state: {e}\n")
+        return 2
+
+    # 2. SK-ADR-CHECK — structural ADR validation.
+    try:
+        adr_report = default_skill_registry.invoke(
+            "SK-ADR-CHECK", {"root": str(repo)},
+        )
+    except Exception as e:
+        sys.stderr.write(f"error: SK-ADR-CHECK failed: {e}\n")
+        return 2
+
+    # 3. Synthesize a minimal workflow manifest for the declared impact
+    #    and execute it against the RunState, emitting frames into the
+    #    repo's event log.
+    manifest = parse_manifest(json.dumps({
+        "id": "aios-check",
+        "version": "0.3.0",
+        "impact": args.impact,
+        "required_gates": [
+            "P_Q1_invariant_integrity",
+            "P_Q2_state_traceability",
+            "P_Q3_decision_reversibility",
+        ],
+    }))
+
+    log = EventLog(home / "events")
+    try:
+        result = WorkflowRunner().run(manifest, runstate, log)
+        # Also record the SK-ADR-CHECK result as a skill.evaluated frame.
+        log.append(
+            kind="skill.evaluated",
+            actor="A4",
+            payload={
+                "skill_id": "SK-ADR-CHECK",
+                "violation_count": adr_report["count"],
+                "run_id": runstate.run_id,
+            },
+        )
+    finally:
+        log.close()
+
+    # 4. Human-readable summary
+    print(f"aios check — {repo}")
+    print(f"  before_ref:     {args.before or '(none — working tree only)'}")
+    print(f"  after_ref:      {args.after}")
+    print(f"  impact:         {args.impact}")
+    print(f"  invariants:     {len(runstate.invariants_after)}")
+    print(f"  ADRs:           {len(runstate.adr_events)}")
+    print("")
+    print(f"  ADR structural violations: {adr_report['count']}")
+    for v in adr_report["violations"][:5]:
+        print(f"    - {v['adr_id']}: {v['kind']} — {v['detail']}")
+    if adr_report["count"] > 5:
+        print(f"    ... and {adr_report['count'] - 5} more")
+    print("")
+    print(result.summary())
+
+    if result.outcome == "aborted":
+        return 4
+    if adr_report["count"] > 0 or result.outcome == "rejected":
+        return 6
+    return 0
+
+
 def cmd_git_init(args: argparse.Namespace) -> int:
     try:
         hook_path = install_post_commit_hook(args.repo)
@@ -410,6 +500,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("repo", nargs="?", default=".",
                     help="repository root (default: current directory)")
     sp.set_defaults(func=cmd_git_init)
+
+    sp = sub.add_parser("check",
+                        help="one-shot project scan: Q1-Q3 + SK-ADR-CHECK")
+    sp.add_argument("--repo", default=".",
+                    help="project root (default: current directory)")
+    sp.add_argument("--before", default=None,
+                    help="git ref to diff against (default: working-tree-only)")
+    sp.add_argument("--after", default="working",
+                    help="git ref to check (default: 'working' = on-disk)")
+    sp.add_argument("--impact", default="local",
+                    choices=["local", "subsystem", "system_wide"])
+    sp.set_defaults(func=cmd_check)
 
     sp = sub.add_parser("run",
                         help="execute a workflow manifest against a RunState")
