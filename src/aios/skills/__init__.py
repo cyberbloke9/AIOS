@@ -32,6 +32,7 @@ from aios.skills.base import (
 from aios.skills import adr_check as _adr_check  # noqa: F401,E402
 from aios.skills import precedent_match as _precedent_match  # noqa: F401,E402
 from aios.skills import threat_model as _threat_model  # noqa: F401,E402
+from aios.skills import debate_n3 as _debate_n3  # noqa: F401,E402
 
 __all__ = [
     "NotImplementedSkillError",
