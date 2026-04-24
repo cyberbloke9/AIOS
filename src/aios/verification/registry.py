@@ -25,6 +25,7 @@ from aios.verification.conservation_scan import (
     scan_q2_state_traceability,
     scan_q3_decision_reversibility,
 )
+from aios.verification.acceptance_tests import p_acceptance_tests
 from aios.verification.pi_sentinel import p_pi_sentinel
 from aios.verification.schema_check import p_schema_valid
 
@@ -228,8 +229,10 @@ def _core_records() -> list[PredicateRecord]:
             soundness_class="other",
             implementation=p_pi_sentinel,
         ),
-        # §1.2: named acceptance-test suite — orchestrator-level, not a
-        # per-run predicate. Registered so workflows can reference it.
+        # §1.2: named acceptance-test suite. Wraps pytest as a
+        # subprocess (sprint 46). suite_path + pytest_args + timeout
+        # come through registry kwargs. See docs/coverage.md on
+        # sandboxing — executes arbitrary test code.
         PredicateRecord(
             id="P_acceptance_tests",
             version="1.0.0",
@@ -242,7 +245,7 @@ def _core_records() -> list[PredicateRecord]:
             reference_vectors="reference_vectors/P_acceptance_tests.json",
             failure_level="major",
             soundness_class="other",
-            implementation=None,
+            implementation=p_acceptance_tests,
         ),
     ]
 
