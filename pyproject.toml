@@ -29,6 +29,13 @@ dependencies = []
 dev = [
     "pytest>=7.4",
 ]
+enterprise = [
+    # Ed25519 signing (Runtime §1.2 sig, §2 capability tokens, §9.1 core crypto
+    # for P-Enterprise and above). cryptography is the standard Python binding
+    # to OpenSSL; well-audited and widely deployed.
+    "cryptography>=42.0",
+    "PyYAML>=6.0",
+]
 
 [project.scripts]
 aios = "aios.cli:main"
