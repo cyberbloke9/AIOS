@@ -1,4 +1,4 @@
-"""TUF 4-role chain walk (sprint 64).
+"""TUF 4-role chain walk + §6.2 staleness & rollback protection.
 
 Runtime Protocol §6.2 — the four TUF roles form a chain:
 
@@ -11,17 +11,22 @@ Runtime Protocol §6.2 — the four TUF roles form a chain:
     snapshot — commits to the current targets version + hash
     timestamp — commits to the current snapshot version + hash
 
-Sprint 53 gave us SignedMetadata + verify_signed_metadata for a single
-role. This module walks the chain: verify root with known keys, extract
-per-role TufRoleSpec from root's payload, verify each lower role with
-its role-specific keys, and check the cross-references.
+verify_tuf_chain walks the chain AND enforces the two spec-required
+defenses on top:
 
-Staleness + freshness (sprint 65) layer on top of this module.
+  Staleness (§6.2 timestamp role — "freshness attestation"):
+    every role's expires_iso > now. Timestamp is the most-frequent
+    refresh; its expiry is what prevents freeze attacks.
+
+  Freshness / rollback protection:
+    version(now) >= version(last_seen). An attacker who caches an
+    old signed document cannot present it to a client that already
+    saw a newer version.
 """
 from __future__ import annotations
 
 import dataclasses as dc
-from typing import Sequence
+from datetime import datetime, timezone
 
 from aios.distribution.tuf import (
     SignedMetadata,
@@ -30,6 +35,14 @@ from aios.distribution.tuf import (
     TufVerificationError,
     verify_signed_metadata,
 )
+
+
+class TufStaleError(TufVerificationError):
+    """A role's expires_iso is in the past."""
+
+
+class TufRollbackError(TufVerificationError):
+    """A role's version regressed vs. last known."""
 
 
 class TufChainError(TufVerificationError):
@@ -58,6 +71,10 @@ def verify_tuf_chain(
     snapshot: SignedMetadata,
     timestamp: SignedMetadata,
     known_root_keys: dict[str, TufKey],
+    now_iso: str | None = None,
+    last_known_targets_version: int | None = None,
+    last_known_snapshot_version: int | None = None,
+    last_known_timestamp_version: int | None = None,
 ) -> TufChainReport:
     """Verify the 4-role chain using `known_root_keys` as the anchor.
 
@@ -153,6 +170,31 @@ def verify_tuf_chain(
     # `targets_in_root` — the root's roles map must declare targets
     targets_in_root = "targets" in (root.signed.get("roles") or {})
 
+    # --- 5. Staleness (§6.2 freshness attestation) ----------------------
+    now = _parse_iso(now_iso) if now_iso else datetime.now(timezone.utc)
+    for meta in (root, targets, snapshot, timestamp):
+        _check_expires(meta, now=now)
+
+    # --- 6. Rollback protection -----------------------------------------
+    if last_known_targets_version is not None and \
+            targets_version < last_known_targets_version:
+        raise TufRollbackError(
+            f"targets version regressed: {targets_version} < "
+            f"{last_known_targets_version}"
+        )
+    if last_known_snapshot_version is not None and \
+            snapshot_version < last_known_snapshot_version:
+        raise TufRollbackError(
+            f"snapshot version regressed: {snapshot_version} < "
+            f"{last_known_snapshot_version}"
+        )
+    if last_known_timestamp_version is not None and \
+            timestamp_version < last_known_timestamp_version:
+        raise TufRollbackError(
+            f"timestamp version regressed: {timestamp_version} < "
+            f"{last_known_timestamp_version}"
+        )
+
     return TufChainReport(
         root_ok=True,
         targets_ok=True,
@@ -170,6 +212,31 @@ def verify_tuf_chain(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _parse_iso(s: str) -> datetime:
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    return datetime.fromisoformat(s).astimezone(timezone.utc)
+
+
+def _check_expires(meta: SignedMetadata, *, now: datetime) -> None:
+    expires_iso = meta.signed.get("expires_iso")
+    if not isinstance(expires_iso, str):
+        raise TufChainError(
+            f"{meta.role_type}.signed.expires_iso missing or non-string"
+        )
+    try:
+        expires = _parse_iso(expires_iso)
+    except ValueError as e:
+        raise TufChainError(
+            f"{meta.role_type}.signed.expires_iso not ISO 8601: {e}"
+        ) from e
+    if expires <= now:
+        raise TufStaleError(
+            f"{meta.role_type} metadata expired at {expires_iso} "
+            f"(now={now.isoformat()})"
+        )
 
 
 def _extract_role_spec(signed: dict, role: str) -> TufRoleSpec:

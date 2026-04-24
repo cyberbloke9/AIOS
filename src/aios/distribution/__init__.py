@@ -63,6 +63,8 @@ from aios.distribution.tuf import (
 from aios.distribution.tuf_chain import (
     TufChainError,
     TufChainReport,
+    TufRollbackError,
+    TufStaleError,
     verify_tuf_chain,
 )
 from aios.distribution.sbom_cyclonedx import (
