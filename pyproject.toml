@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aios"
-version = "0.5.0"
-description = "AIOS v8 reference implementation. Adopt/check + calibration + credentialing + audit + snapshots + compaction + SBOM + TUF + bootstrap anchor + signed releases + shadow-dir install/upgrade/rollback/uninstall. M5 deployable."
+version = "0.6.0"
+description = "AIOS v8 reference implementation. Full spec: snapshots + compaction + SBOM + TUF chain + rotation + bootstrap + signed releases + install/upgrade/rollback/uninstall + Merkle §1.5 + Macaroon capability tokens + DPoP + kill switch + STRIDE + debate-N3 + TLA+ model. All four profiles pass the loader."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

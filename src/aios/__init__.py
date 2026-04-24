@@ -9,7 +9,7 @@ Protocol §10.1. Explicit not-implemented list in docs/coverage.md.
 """
 from __future__ import annotations
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 __spec_versions__ = {
     "constitution": "1.0.0",
     "kernel": "1.0.0",

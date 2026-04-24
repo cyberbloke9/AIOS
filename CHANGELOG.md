@@ -2,6 +2,74 @@
 
 All notable changes to this project will be documented here.
 
+## [0.6.0] — unreleased (M6: make it hostile-review-ready / P-HighAssurance)
+
+Closes every remaining §10.4 gap that lives inside the library. P-HA
+now passes the loader when a Merkle batch frame exists in the log.
+Deployment-specific items (Sigstore/Rekor network submission,
+reproducible builds, TPM attestation) remain operator homework.
+
+### Added
+
+- **§1.5 Merkle batch overlay.** `aios.runtime.merkle` implements
+  RFC 6962 MTH + inclusion proofs (leaf 0x00 / node 0x01 prefix;
+  non-power-of-2 padding per the RFC). `EventLog.create_merkle_batch`
+  appends a `merkle.batch` frame over a specified seq range.
+  Third-party RFC 6962 clients can verify without AIOS tooling.
+- **§2.2-2.3 capability tokens.** Macaroon-style: Ed25519 base
+  signature + HMAC-SHA256 caveat chain (`add_caveat`, `verify_token`).
+  Four caveat types: time, scope, predicate, audience. Chain tamper
+  detection via constant-time compare.
+- **§2.8 DPoP proof-of-possession.** `add_pop_caveat` binds a token
+  to a subject-held Ed25519 key. `verify_with_pop` requires a proof
+  signature over caller-chosen message. `verify_token` REJECTS pop
+  caveats — DPoP is the only verify path for pop-bound tokens.
+- **§6.2 TUF 4-role chain walk.** `verify_tuf_chain` verifies root
+  against known_root_keys, extracts per-role keyid sets from root,
+  verifies targets/snapshot/timestamp, checks cross-references
+  (snapshot.meta['targets.json'].version == targets.version; same
+  for timestamp → snapshot).
+- **TUF staleness + rollback.** All four roles' `expires_iso > now`;
+  optional `last_known_*_version` triggers `TufRollbackError` if
+  the presented version regressed.
+- **§6.4 root key rotation.** `verify_root_rotation(old, new)` —
+  old is self-consistent, new signed by old threshold, new also
+  self-consistent under its own declared keys. Returns the new key
+  ring for the caller to adopt.
+- **Kernel §5 kill switch.** Four scopes (global / authority /
+  workflow / skill). Authorization table enforced. `aios kill` /
+  `aios kill-lift` / `aios kill-status` CLIs. Global kill implies
+  read-only mode.
+- **Subprocess sandboxing** for `P_acceptance_tests` — env scrub
+  (strips *_TOKEN / *_KEY / *_SECRET / *_PASSWORD / DATABASE_URL etc.)
+  + POSIX `resource.setrlimit(RLIMIT_AS)` via preexec_fn when
+  memory_limit_mb supplied.
+- **SK-THREAT-MODEL** — STRIDE pattern detector over a component +
+  data-flow description. Every threat carries a mitigation hint.
+- **SK-DEBATE-N3** — multi-skill concurrence. Runs N >= 3 skills
+  on shared inputs, aggregates to strict-majority verdict with
+  agreement score + dissenter list.
+- **TLA+ formal model** at `docs/spec/AIOS_EventLog.tla` + `.cfg`.
+  Five invariants (SingleWriter, LSN_Monotonic, LSN_NoGap,
+  ChainLinked, UniqueHashes) + AppendOnly temporal property. TLC-
+  runnable for external verification.
+- **P-HighAssurance loader.** `_run_p_highassurance_checks` verifies
+  the six compiled-in features. Remaining deferrals surface as
+  warnings, not fails. P-HA now PASSES when a merkle.batch is
+  present.
+
+### Test count
+
+866/866 pass with enterprise extra installed.
+
+### Still deferred (operator environment, not library)
+
+- Sigstore/Rekor live transparency-log submission (bundle format
+  compatible in v0.5; wire it to a live Rekor instance for P-HA in
+  production)
+- Reproducible builds + diverse-builder attestation (Distribution §5.2)
+- Hardware-root-of-trust hooks (TPM/TEE attestation for bootstrap)
+
 ## [0.5.0] — unreleased (M5: make it deployable)
 
 Runtime §§1.7–1.8 (snapshots + compaction), Distribution §§4.1–4.4

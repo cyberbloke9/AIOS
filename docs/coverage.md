@@ -1,8 +1,9 @@
 # Coverage matrix
 
 > What the current build implements and what it deliberately does not.
-> Living document updated per release. Current: **v0.5.0** (M5 —
-> "make it deployable").
+> Living document updated per release. Current: **v0.6.0** (M6 —
+> "make it hostile-review-ready"). All four §10 profiles pass the
+> loader when their required mechanisms are present.
 > The authoritative source is Runtime Protocol §8.1 (normative covered
 > vs. not-covered for `event_log.py`). This document extends §8.1 to
 > the whole package.
