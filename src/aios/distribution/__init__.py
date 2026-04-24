@@ -60,6 +60,11 @@ from aios.distribution.tuf import (
     root_metadata_fingerprint,
     verify_signed_metadata,
 )
+from aios.distribution.tuf_chain import (
+    TufChainError,
+    TufChainReport,
+    verify_tuf_chain,
+)
 from aios.distribution.sbom_cyclonedx import (
     CycloneDXDocument,
     generate_cyclonedx,
