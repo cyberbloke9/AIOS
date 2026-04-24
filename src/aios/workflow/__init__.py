@@ -12,6 +12,12 @@ from aios.workflow.manifest import (
     parse_manifest,
     default_required_gates,
 )
+from aios.workflow.runner import (
+    GateResult,
+    Outcome,
+    WorkflowResult,
+    WorkflowRunner,
+)
 
 __all__ = [
     "ImpactLevel",
@@ -19,4 +25,8 @@ __all__ = [
     "ManifestError",
     "parse_manifest",
     "default_required_gates",
+    "GateResult",
+    "Outcome",
+    "WorkflowResult",
+    "WorkflowRunner",
 ]

@@ -65,6 +65,7 @@ _LOCAL_DEFAULTS: tuple[str, ...] = (
 _SUBSYSTEM_DEFAULTS: tuple[str, ...] = _LOCAL_DEFAULTS + (
     "P_Q3_decision_reversibility",
     "P_M4_independence",
+    "P_O5_context_sufficiency_hard",
     "P_acceptance_tests",
 )
 
