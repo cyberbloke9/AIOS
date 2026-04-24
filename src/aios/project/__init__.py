@@ -12,11 +12,17 @@ from aios.project.readers import (
     read_adrs,
     read_invariants,
 )
+from aios.project.runstate import (
+    GitError,
+    runstate_from_project,
+)
 
 __all__ = [
     "ADRParseError",
     "InvariantParseError",
     "ProjectReadError",
+    "GitError",
     "read_adrs",
     "read_invariants",
+    "runstate_from_project",
 ]
