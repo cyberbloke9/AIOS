@@ -11,6 +11,13 @@ from aios.distribution.bootstrap import (
     load_root_metadata,
     verify_bootstrap_anchor,
 )
+from aios.distribution.install import (
+    InstallError,
+    InstallResult,
+    current_version,
+    install_package,
+    list_installed_versions,
+)
 from aios.distribution.integrity import (
     FileEntry,
     IntegrityManifest,
