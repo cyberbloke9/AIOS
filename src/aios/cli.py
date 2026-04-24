@@ -44,7 +44,10 @@ from aios.verification.conservation_scan import (
     any_breach, conservation_scan,
 )
 from aios.verification.corpus import CorpusQualityError
-from aios.distribution import generate_cyclonedx, generate_spdx
+from aios.distribution import (
+    IntegrityManifest, build_integrity_manifest,
+    generate_cyclonedx, generate_spdx, verify_install,
+)
 from aios.project import (
     adopt as _adopt_project,
     install_post_commit_hook,
@@ -348,6 +351,56 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     print(f"  adversarial:  {record.corpus_adversarial_share:.3f}")
     print(f"  record:       {path}")
     return 0
+
+
+def cmd_integrity_manifest(args: argparse.Namespace) -> int:
+    """Build + emit an integrity manifest for a directory tree."""
+    try:
+        manifest = build_integrity_manifest(args.root)
+    except (NotADirectoryError, OSError) as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
+    text = manifest.to_json()
+    if args.output:
+        Path(args.output).write_text(text + "\n", encoding="utf-8")
+        print(f"wrote integrity manifest to {args.output}")
+        print(f"  files: {len(manifest.files)}")
+        print(f"  tree_sha256: {manifest.tree_sha256}")
+    else:
+        print(text)
+    return 0
+
+
+def cmd_verify_install(args: argparse.Namespace) -> int:
+    """Verify a directory tree against a shipped integrity manifest."""
+    try:
+        manifest = IntegrityManifest.from_json_path(args.manifest)
+    except (OSError, ValueError) as e:
+        sys.stderr.write(f"error: could not load manifest: {e}\n")
+        return 2
+    try:
+        report = verify_install(
+            args.root, manifest,
+            check_extras=not args.allow_extras,
+        )
+    except NotADirectoryError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
+
+    print(f"integrity report for {args.root}:")
+    print(f"  manifest tree hash (expected): {report.tree_sha256_expected}")
+    print(f"  installed tree hash (actual):  {report.tree_sha256_actual}")
+    print(f"  missing:    {len(report.missing)}")
+    for p in report.missing[:10]:
+        print(f"    - {p}")
+    print(f"  mismatched: {len(report.mismatched)}")
+    for p in report.mismatched[:10]:
+        print(f"    ~ {p}")
+    print(f"  extra:      {len(report.extra)}")
+    for p in report.extra[:10]:
+        print(f"    + {p}")
+    print(f"  verdict: {'OK' if report.ok else 'FAIL'}")
+    return 0 if report.ok else 12
 
 
 def cmd_sbom(args: argparse.Namespace) -> int:
@@ -728,6 +781,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("run_id", help="run_id to replay")
     sp.add_argument("--home", help="AIOS home directory")
     sp.set_defaults(func=cmd_replay_incident)
+
+    sp = sub.add_parser("integrity-manifest",
+                        help="build SHA-256 manifest of a directory tree")
+    sp.add_argument("root", help="directory to scan")
+    sp.add_argument("--output", default=None,
+                    help="write manifest to PATH instead of stdout")
+    sp.set_defaults(func=cmd_integrity_manifest)
+
+    sp = sub.add_parser("verify-install",
+                        help="check an install against a shipped integrity manifest")
+    sp.add_argument("root", help="installed directory to verify")
+    sp.add_argument("--manifest", required=True,
+                    help="path to integrity.manifest.json")
+    sp.add_argument("--allow-extras", action="store_true",
+                    help="do not fail on extra files on disk")
+    sp.set_defaults(func=cmd_verify_install)
 
     sp = sub.add_parser("sbom",
                         help="emit SBOM for current environment (Distribution §5.3)")
