@@ -24,6 +24,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterator
 
+from aios.runtime.filelock import FileLock, LockContentionError
+
 # ---------------------------------------------------------------------------
 # §3.1 Deterministic CBOR (RFC 8949 §4.2) — AIOS subset
 # ---------------------------------------------------------------------------
@@ -269,7 +271,17 @@ class EventLog:
         self._last_hash = bytes(32)
         self._active_created_ts_ns = 0
 
-        self._recover_or_init()
+        # §5.1 single-writer invariant: take the directory-scoped OS lock
+        # before touching segment files. Release on close(). A second
+        # EventLog constructor on the same root while the first is open
+        # raises LockContentionError.
+        self._lock = FileLock(self.root / "log.lock")
+        self._lock.acquire()
+        try:
+            self._recover_or_init()
+        except Exception:
+            self._lock.release()
+            raise
 
     def _segment_files(self) -> list[Path]:
         return sorted(self.root.glob("segment_*.aios"),
@@ -493,6 +505,9 @@ class EventLog:
         if self._active_handle is not None:
             self._active_handle.close()
             self._active_handle = None
+        # Release the writer lock last, after the active-segment handle
+        # is closed. Safe to call close() twice.
+        self._lock.release()
 
     @staticmethod
     def _now_ns() -> int:
